@@ -14,7 +14,7 @@ A_sp <- as(A, "Spatial")
 
 A_sp$ID <- factor("all")
 
-kde <- kernelUD(A_sp["ID"], h = "href", grid = 500)
+kde <- kernelUD(A_sp["ID"], h = "href", grid = 2000)
 
 plot(kde$all)
 
