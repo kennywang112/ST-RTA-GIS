@@ -14,3 +14,4 @@ taiwan_road <- st_read("Data/road/gis_osm_roads_free_1.shp")%>%st_transform(crs)
 
 taiwan_crop <- taiwan%>%st_crop(xmin = 119, ymin = 20, xmax = 123, ymax = 26)
 
+combined_data_in_taiwan <- read_csv("/Users/wangqiqian/Desktop/ST-RTA/ComputedDataV2/Accident/combined_data_in_taiwan.csv")

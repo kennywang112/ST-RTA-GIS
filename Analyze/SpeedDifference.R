@@ -84,8 +84,8 @@ pairs_annot <- pairs_df %>%
               select(road_id, name_a = name, fclass_a = fclass),
             by = c("road_id_a" = "road_id"))
 
-
-library(tmap)
-tmap_mode("view")
-tm_shape(pairs_annot) +
-  tm_dots(size = 0.5, col = "speed_delta", palette = "Reds", style = "quantile")
+write_sf(
+  pairs_annot,
+  "./CalculatedData/pairs_annot.shp",
+  layer_options = "ENCODING=UTF-8"
+)
