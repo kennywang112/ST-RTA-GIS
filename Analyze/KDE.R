@@ -6,19 +6,45 @@ library(raster)
 library(adehabitatHR)
 library(tidyverse)
 
-data <- read.csv('/Users/wangqiqian/Desktop/ST-RTA/ComputedData/Accident/combineddata_with_CC.csv')
-data <- data%>%filter(COUNTYNAME=='臺北市' & `當事者區分.類別.子類別名稱.車種`=='腳踏自行車')
-A <- st_as_sf(data, coords = c("經度", "緯度"), crs = 4326)%>%st_transform(3826)
-A <- st_zm(A, drop = TRUE, what = "ZM")
-A_sp <- as(A, "Spatial")
-
-A_sp$ID <- factor("all")
-
-kde <- kernelUD(A_sp["ID"], h = "href", grid = 2000)
-
-plot(kde$all)
-
-r <- raster(kde$all)
+data <- specific_combined_data_sf%>%filter(COUNTYNAME=='臺北市')
+# data <- data%>%filter(事故類型及型態子類別名稱=='追撞')
+# data <- data%>%filter(道路型態子類別名稱=='四岔路')
+# data <- data%>%filter(`車道劃分設施-分向設施大類別名稱`=='中央分向島')
+data <- data%>%filter(youbike_100m_count > 0)
+# data <- data%>%filter(COUNTYNAME=='臺北市' & `當事者區分.類別.子類別名稱.車種`=='腳踏自行車')
 
 # 存成 GeoTIFF，QGIS 可直接讀
-writeRaster(r, "./CalculatedData/kde_output_bike.tif", format = "GTiff", overwrite = TRUE)
+# writeRaster(r, "./CalculatedData/kde_output_bike.tif", format = "GTiff", overwrite = TRUE)
+
+library(raster)
+library(adehabitatHR)
+data_sp <- st_as_sf(data, coords = c("經度", "緯度"), crs = 4326)%>%as_Spatial()
+kde.output <- kernelUD(data_sp, h="href", grid = 1000)
+h0 <- kde.output@h$h
+kde.output <- kernelUD(data_sp, h=h0*0.2, grid = 3000)
+kde <- raster(kde.output)
+# sets projection to British National Grid
+# projection(kde) <- CRS("+init=EPSG:27700")
+
+tm_shape(kde) + tm_raster()
+
+masked_kde <- mask(kde, data_sp)
+tm_shape(masked_kde) + tm_raster()
+
+tmap_mode("view")
+tm_basemap(providers$Esri.WorldTopoMap)+
+  tm_shape(masked_kde) +
+  tm_raster(style = "cont", legend.show = FALSE, palette = "RdGy") +
+  tm_shape(data_sp) + tm_borders(alpha=0.3, col = "white") +
+  tm_layout(frame = FALSE)
+
+
+kde_trim <- kde
+kde_trim[kde_trim <= 0] <- NA
+
+tm_shape(kde_trim) +
+  tm_raster(style = "quantile", n = 7, palette = "Blues", alpha = 0.85) +
+  tm_layout(legend.outside = TRUE, frame = FALSE)
+
+# save kde_trim
+writeRaster(kde_trim, "/Users/wangqiqian/Desktop/RTA-GIS/CalculatedData/kde_youbike.tif", format = "GTiff", overwrite = TRUE)

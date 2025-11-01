@@ -1,7 +1,7 @@
 ## 這裏是以速限差為中心buffer找資料點，但是應該使用youbike為基礎找速限差點點
 
 pairs_annot <- st_read(dsn="./CalculatedData/pairs_annot.shp", layer="pairs_annot")
-pairs_annot
+pairs_annot%>%dim()
 
 library(tmap)
 tmap_mode("view")

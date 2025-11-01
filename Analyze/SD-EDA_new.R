@@ -8,11 +8,11 @@ pairs_annot <- st_read(dsn="./CalculatedData/pairs_annot.shp", layer="pairs_anno
 pairs_annot
 
 specific_pairs_annot <- pairs_annot
-specific_pairs_annot_3826  <- st_transform(specific_pairs_annot, 3826)
+specific_pairs_annot_3826  <- st_transform(specific_pairs_annot, crs)
 
 specific_combined_data <- combined_data_in_taiwan %>% filter(COUNTYNAME == "臺北市")
 specific_combined_data_sf <- st_as_sf(specific_combined_data, coords = c("經度", "緯度"), crs = 4326)
-specific_combined_data_3826 <- st_transform(specific_combined_data_sf, 3826)
+specific_combined_data_3826 <- st_transform(specific_combined_data_sf, crs)
 specific_combined_data_3826%>%select(geometry)
 
 
@@ -25,7 +25,6 @@ acc_buf <- st_buffer(specific_combined_data_3826, dist = buf_dist) %>%
 hits <- st_intersects(acc_buf, specific_pairs_annot_3826)
 
 acc_buf$spec_count <- lengths(hits)
-acc_buf$has_spd <- acc_buf$spec_count > 0
 
 # 每個 buffer 的最大 spd_dlt
 acc_buf$max_spd_dlt <- sapply(hits, function(ix) {
@@ -34,10 +33,15 @@ acc_buf$max_spd_dlt <- sapply(hits, function(ix) {
   max(vals, na.rm = TRUE)
 })
 acc_buf$max_spd_dlt <- ifelse(is.na(acc_buf$max_spd_dlt), 0, acc_buf$max_spd_dlt)
-acc_buf$spd_group <- case_when(
-  acc_buf$max_spd_dlt >= 50 ~ "High Speed Diff",
-  acc_buf$max_spd_dlt > 0 & acc_buf$max_spd_dlt < 50 ~ "Low Speed Diff",
-  TRUE ~ "No Speed Diff"
+# acc_buf$spd_group <- case_when(
+#   acc_buf$max_spd_dlt >= 50 ~ "High Speed Diff",
+#   acc_buf$max_spd_dlt > 0 & acc_buf$max_spd_dlt < 50 ~ "Low Speed Diff",
+#   TRUE ~ "No Speed Diff"
+# )
+acc_buf$spd_group <- cut(
+  acc_buf$max_spd_dlt,
+  breaks = 10,
+  include.lowest = TRUE
 )
 acc_buf$spd_group%>%table()
 
@@ -60,7 +64,7 @@ plot_func <- function(data, main_col, target) {
     mutate(prop = n / sum(n)) %>%
     ungroup()
 
-  ggplot(ratio_table, aes(x = !!target_q, y = prop, fill = as.factor(!!main_col_q))) +
+  ggplot(ratio_table, aes(x = !!target_q, y = prop, fill = !!main_col_q)) +
     geom_col(position = position_dodge(width = 0.9)) +
     labs(x = as_label(target_q), fill = as_label(main_col_q)) +
     theme_minimal()
@@ -71,8 +75,9 @@ lst <- c('道路類別-第1當事者-名稱', '道路型態大類別名稱', '�
   '車道劃分設施-分道設施-快慢車道間名稱', '車道劃分設施-分道設施-路面邊線名稱', '事故類型及型態大類別名稱', '事故類型及型態子類別名稱', '肇因研判大類別名稱-主要',
   '當事者區分-類別-大類別名稱-車種', '當事者行動狀態大類別名稱', '車輛撞擊部位大類別名稱-最初', '肇因研判大類別名稱-個別')
 
-plot_func(acc_buf, spd_group, `號誌-號誌種類名稱`)
-plot_func(acc_buf, has_spd, `號誌-號誌種類名稱`)
+plot_func(acc_buf, spd_group, `事故類型及型態子類別名稱`)
+
+acc_buf$spd_group
 
 for (i in lst) {
   col_sym <- sym(i)
@@ -81,7 +86,20 @@ for (i in lst) {
   ggsave(paste0("Layouts/speed_diff_", i, ".png"), plot = p, width = 8, height = 6, dpi = 300)
 }
 
+plot_func(acc_buf, spd_group, youbike_100m_count)
 
+bike <- acc_buf%>%
+  count(spd_group, youbike_100m_count) %>%
+  group_by(spd_group) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
 
+bike%>%
+  ggplot()+
+  geom_col(aes(x=spd_group, y=prop, fill=as.factor(youbike_100m_count)),
+           position = position_dodge(width = 0.9)) +
+  labs(x="Speed Difference Group", fill="Youbike within 100m")
 
+bike%>%group_by(spd_group)%>%
+  summarise(total = sum(n))
 

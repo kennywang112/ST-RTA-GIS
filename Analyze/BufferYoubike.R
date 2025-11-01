@@ -1,10 +1,6 @@
-library(sf)
 library(spNetwork)
-library(tmap)
 library(tidyverse)
-
-roads <- st_read(dsn="~/Desktop/RTA-GIS/Data/road/gis_osm_roads_free_1.shp", layer="gis_osm_roads_free_1")
-youbike <- read_csv("~/Desktop/ST-RTA/ComputedDataV2/Youbike/full_youbike.csv")
+source("./Analyze/ReadData.R")
 
 # roadsBuffer <- st_buffer(roads, dist=250)
 
@@ -12,7 +8,6 @@ youbike <- read_csv("~/Desktop/ST-RTA/ComputedDataV2/Youbike/full_youbike.csv")
 youbike_sf <- st_as_sf(youbike, coords = c("PositionLon", "PositionLat"), crs = 4326)
 youbike_sf_m <- st_transform(youbike_sf, 3857)
 youbike_buf <- st_buffer(youbike_sf_m, dist = 100)
-
 
 library(tmaptools)
 

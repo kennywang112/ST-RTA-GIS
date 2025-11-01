@@ -3,6 +3,7 @@ library(dplyr)
 library(stringr)
 library(purrr)
 library(tidyr)
+source("./Analyze/ReadData.R")
 
 # taipei_roads
 roadsf <- taipei_roads#%>%filter(maxspeed > 0)
@@ -17,7 +18,7 @@ roadsf%>%dim()
 roads_lines%>%dim()
 
 # 取端點
-roads_lines <- st_transform(roads_lines, 3826)
+roads_lines <- st_transform(roads_lines, crs)
 pts_multi <- st_line_sample(st_geometry(roads_lines), sample = c(0, 1))
 pts <- st_cast(pts_multi, "POINT")
 
@@ -58,7 +59,7 @@ by_junction <- endpoints %>%
   mutate(n_roads = map_int(roadsf, length)) %>%
   filter(n_roads >= 2)
 
-speed_diff_min <- 10  # 抓差
+speed_diff_min <- 10  # distance threshold
 pairs_df <- by_junction %>%
   mutate(combo = map2(roadsf, speeds, ~{
     r <- .x; s <- .y
