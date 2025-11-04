@@ -71,8 +71,9 @@ pairs_df <- by_junction %>%
       speed_a = s[idx[,1]],
       speed_b = s[idx[,2]]
     )
-  })) %>%
-  select(geometry, combo) %>%
+  }))
+pairs_df_filter <- pairs_df%>%
+  dplyr::select(geometry, combo) %>%
   unnest(combo) %>%
   filter(!is.na(speed_a), !is.na(speed_b)) %>%
   mutate(speed_delta = abs(speed_a - speed_b)) %>%
@@ -80,13 +81,13 @@ pairs_df <- by_junction %>%
   st_as_sf()
 
 # 接回屬性（路名、等級）
-pairs_annot <- pairs_df %>%
-  left_join(st_drop_geometry(roads_lines) %>%
-              select(road_id, name_a = name, fclass_a = fclass),
+pairs_annot <- pairs_df_filter %>%
+  dplyr::left_join(st_drop_geometry(roads_lines) %>%
+                     dplyr::select(road_id, name_a = name, fclass_a = fclass),
             by = c("road_id_a" = "road_id"))
 
 write_sf(
   pairs_annot,
-  "./CalculatedData/pairs_annot.shp",
+  "./CalculatedData/pairs_annot_all_cities.shp",
   layer_options = "ENCODING=UTF-8"
 )
