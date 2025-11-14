@@ -20,7 +20,7 @@ data <- data%>%filter(事故類型及型態子類別名稱=='追撞')
 
 library(raster)
 library(adehabitatHR)
-data_sp <- st_as_sf(data, coords = c("經度", "緯度"), crs = 4326)%>%as_Spatial()
+data_sp <- st_as_sf(data, coords = c("經度", "緯度"), crs = crs_init)%>%as_Spatial()
 kde.output <- kernelUD(data_sp, h="href", grid = 1000)
 h0 <- kde.output@h$h
 kde.output <- kernelUD(data_sp, h=h0*0.2, grid = 3000)

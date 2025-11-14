@@ -8,7 +8,7 @@ tmap_mode("view")
 tm_shape(pairs_annot) +
   tm_dots(size = 0.5, col = "spd_dlt", palette = "Reds", style = "quantile")
 
-specific_pairs_annot <- pairs_annot#%>%filter(spd_dlt == 50)
+specific_pairs_annot <- pairs_annot%>%filter(COUNTYNAME=="臺北市")
 
 specific_pairs_annot%>%
   tm_shape() +
@@ -17,10 +17,10 @@ specific_pairs_annot%>%
 specific_combined_data <- combined_data_in_taiwan %>% filter(COUNTYNAME == "臺北市")
 
 # crs transformation
-specific_pairs_annot_3826  <- st_transform(specific_pairs_annot, 3826)
+specific_pairs_annot_3826  <- st_transform(specific_pairs_annot, crs)
 
-specific_combined_data_sf <- st_as_sf(specific_combined_data, coords = c("經度", "緯度"), crs = 4326)
-specific_combined_data_3826 <- st_transform(specific_combined_data_sf, 3826)
+specific_combined_data_sf <- st_as_sf(specific_combined_data, coords = c("經度", "緯度"), crs = crs_init)
+specific_combined_data_3826 <- st_transform(specific_combined_data_sf, crs)
 specific_combined_data_3826%>%select(geometry)
 
 buf_dist <- 100

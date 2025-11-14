@@ -6,7 +6,7 @@ library(tidyr)
 source("./Analyze/ReadData.R")
 
 # taipei_roads
-roadsf <- taipei_roads#%>%filter(maxspeed > 0)
+roadsf <- roads#%>%filter(maxspeed > 0)
 
 roads_lines <- roadsf %>%
   st_collection_extract("LINESTRING") %>%  # 若有 GEOMETRYCOLLECTION，先抽出線
@@ -18,7 +18,7 @@ roadsf%>%dim()
 roads_lines%>%dim()
 
 # 取端點
-roads_lines <- st_transform(roads_lines, crs)
+roads_lines <- st_transform(roads_lines, 3826)
 pts_multi <- st_line_sample(st_geometry(roads_lines), sample = c(0, 1))
 pts <- st_cast(pts_multi, "POINT")
 
@@ -38,7 +38,7 @@ endpoints <- st_sf(
   geometry = pts
 )
 
-# 自製「格點對齊」（四捨五入到 1 公尺）
+# 四捨五入1公尺對齊
 coords <- st_coordinates(endpoints)
 endpoints <- endpoints %>%
   mutate(
