@@ -20,3 +20,16 @@ youbike_spd%>%
     size = 3
   ) +
   coord_flip()
+
+# youbike 和自行車分析
+tbl <- table(acc_buf$`當事者區分-類別-子類別名稱-車種`, acc_buf$youbike_100m_count)
+res <- chisq.test(tbl)$residuals
+
+library(reshape2)
+
+melt(res) %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2() +
+  labs(x="Accident Type", y="Near YouBike (0/1)", fill="Residual")+
+  coord_flip()

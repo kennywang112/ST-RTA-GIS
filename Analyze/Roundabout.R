@@ -1,13 +1,12 @@
 # 圓環分析
 
 # 公館圓環事故
-
 roundabouts <- tribble(
   ~name, ~lat, ~lon,
   "台北市公館圓環", 25.011225446326605, 121.53712748254088,
   "台北市建成圓環", 25.053836355512296, 121.51470061353103,
-  "台北市仁愛圓環", 25.03806076272114, 121.54930419860591,
-  "台北市景福門圓環", 25.039217509311257, 121.5180479746109,
+  "台北市仁愛圓環", 25.03785094884258, 121.54884923186027,
+  "台北市景福門圓環", 25.039024861088162, 121.51764257316145,
   "台南市後甲圓環", 22.98840360799005,  120.23388549774656,
   "台南市湯德章紀念公園圓環", 22.992723473467116, 120.20550269537732,
   "台南市東門圓環（台南）", 22.988786000438793,  120.21131391309147,
@@ -29,21 +28,27 @@ acc_cent_3826 <- st_centroid(acc_buf_3826)
 
 pt_buf100 <- st_buffer(pt_3826, dist = 200)
 
-# write_sf(
-#   pt_3826,
-#   "./CalculatedData/roundabouts_sf.shp",
-#   layer_options = "ENCODING=UTF-8"
-# )
+write_sf(
+  pt_3826,
+  "./CalculatedData/roundabouts_sf.shp",
+  layer_options = "ENCODING=UTF-8"
+)
 
-# write_sf(
-#   pt_buf100,
-#   "./CalculatedData/roundabouts_buf200m.shp",
-#   layer_options = "ENCODING=UTF-8"
-# )
+write_sf(
+  pt_buf100,
+  "./CalculatedData/roundabouts_buf200m.shp",
+  layer_options = "ENCODING=UTF-8"
+)
 
 inter_idx <- st_intersects(acc_cent_3826, pt_buf100, sparse = FALSE)
 rows_any <- apply(inter_idx, 1, any)
 acc_in_100m_all <- acc_buf_3826[rows_any, ]
+
+# save acc_in_100m_all as csv
+write_csv(
+  acc_in_100m_all,
+  "./CalculatedData/accidents_near_roundabouts_200m.csv"
+)
 
 acc_specific <- acc_buf_3826[inter_idx[, 1], ]
 acc_specific$COUNTYNAME%>%unique()
@@ -56,6 +61,18 @@ acc_in_100m_all <- st_join(
 
 # 和原始的圓環事故作比較
 roundabouts <- acc_buf%>%filter(道路型態子類別名稱 == '圓環') # 舊版
+
+acc_in_100m_all%>%
+  st_drop_geometry()%>%
+  group_by(spd_group)%>%
+  summarize(n = n())%>%
+  mutate(prop= n / sum(n))%>%
+  ggplot()+
+  geom_bar(
+    aes(x = spd_group, y = prop, fill = spd_group),
+    stat = 'identity'
+  )+
+  coord_flip()
 
 county_signal <- acc_in_100m_all%>%
   st_drop_geometry()%>%
