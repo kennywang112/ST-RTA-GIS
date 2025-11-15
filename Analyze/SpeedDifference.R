@@ -82,9 +82,13 @@ pairs_df_filter <- pairs_df%>%
 
 # 接回屬性（路名、等級）
 pairs_annot <- pairs_df_filter %>%
-  dplyr::left_join(st_drop_geometry(roads_lines) %>%
-                     dplyr::select(road_id, name_a = name, fclass_a = fclass),
+  dplyr::left_join(st_drop_geometry(roads_lines), #%>% dplyr::select(road_id, name_a = name, fclass_a = fclass),
             by = c("road_id_a" = "road_id"))
+
+pairs_annot$tunnel%>%unique()
+pairs_annot$layer%>%unique()
+pairs_annot$fclass%>%unique()
+pairs_annot$oneway%>%unique()
 
 write_sf(
   pairs_annot,

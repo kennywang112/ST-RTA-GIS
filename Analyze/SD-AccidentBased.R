@@ -4,11 +4,15 @@ library(sysfonts)
 font_add_google("Noto Sans TC", family = "noto")
 showtext_auto()
 
-pairs_annot <- st_read(dsn="./CalculatedData/pairs_annot_all_cities.shp", layer="pairs_annot_all_cities")
+pairs_annot <- st_read(dsn="./CalculatedData/pairs_annot_all_cities.shp", layer="pairs_annot_all_cities")%>%
+  st_transform(crs)
 pairs_annot <- st_join(
   pairs_annot,
-  taiwan %>% select(COUNTYNAME, TOWNNAME, VILLNAME)
+  taiwan%>%
+    select(COUNTYNAME, TOWNNAME, VILLNAME)%>%
+    st_transform(crs)
 )
+
 pairs_annot%>%summary()
 
 library(tmap)
@@ -22,10 +26,10 @@ filter_lst <- c("新北市", "基隆市", "桃園市", "新竹市", "新竹縣",
 # filter_lst <- c("新北市")
 
 specific_pairs_annot <- pairs_annot%>%
-  filter(COUNTYNAME %in% filter_lst)%>%
+  # filter(COUNTYNAME %in% filter_lst)%>%
   st_transform(crs)
 final_data <- combined_data_in_taiwan%>%
-  filter(COUNTYNAME %in% filter_lst)%>%
+  # filter(COUNTYNAME %in% filter_lst)%>%
   st_as_sf(coords = c("經度", "緯度"), crs = crs_init)%>%
   st_transform(crs)
 
@@ -58,10 +62,18 @@ qs <- acc_buf %>%
 qs
 
 acc_buf$spd_group <- case_when(
-  acc_buf$max_spd_dlt >= 50 ~ "High Speed Diff",
+  acc_buf$max_spd_dlt > 50 ~ "High Speed Diff",
+  acc_buf$max_spd_dlt == 50 ~ "Medium Speed Diff",
   acc_buf$max_spd_dlt > 0 & acc_buf$max_spd_dlt < 50 ~ "Low Speed Diff",
   TRUE ~ "No Speed Diff"
 )
+acc_buf$spd_group <- factor(
+  acc_buf$spd_group,
+  levels = c("No Speed Diff", "Low Speed Diff", "Medium Speed Diff", "High Speed Diff")
+)
+
+acc_buf
+
 # acc_buf$spd_group <- cut(
 #   acc_buf$max_spd_dlt,
 #   breaks = 10,
@@ -98,6 +110,7 @@ plot_func <- function(data, main_col, target) {
     geom_col(position = position_dodge(width = 0.9)) +
     labs(x = as_label(target_q), fill = as_label(main_col_q)) +
     # theme_minimal()
+    geom_text(aes(label = n), position = position_dodge(width = 0.9), hjust = -0.1) +
     coord_flip()
 
   return(ratio_table)
@@ -107,9 +120,10 @@ plot_func <- function(data, main_col, target) {
 lst <- c('道路類別-第1當事者-名稱', '道路型態大類別名稱', '道路型態子類別名稱', '事故位置大類別名稱', '事故位置子類別名稱', '號誌-號誌種類名稱',
   '號誌-號誌動作名稱', '車道劃分設施-分向設施大類別名稱', '車道劃分設施-分向設施子類別名稱', '車道劃分設施-分道設施-快車道或一般車道間名稱',
   '車道劃分設施-分道設施-快慢車道間名稱', '車道劃分設施-分道設施-路面邊線名稱', '事故類型及型態大類別名稱', '事故類型及型態子類別名稱', '肇因研判大類別名稱-主要',
-  '當事者區分-類別-大類別名稱-車種', '當事者行動狀態大類別名稱', '車輛撞擊部位大類別名稱-最初', '肇因研判大類別名稱-個別', '當事者區分-類別-子類別名稱-車種')
+  '當事者區分-類別-大類別名稱-車種', '當事者行動狀態大類別名稱', '車輛撞擊部位大類別名稱-最初', '肇因研判大類別名稱-個別', '當事者區分-類別-子類別名稱-車種',
+  '道路型態子類別名稱', 'youbike_100m_count')
 
-lst <- c('道路型態子類別名稱', 'youbike_100m_count')
+# lst <- c('道路型態子類別名稱', 'youbike_100m_count')
 
 for (i in lst) {
   col_sym <- sym(i)
@@ -117,16 +131,16 @@ for (i in lst) {
   ggsave(paste0("Layouts/speed_diff_", i, ".png"), plot = p, width = 8, height = 6, dpi = 300)
 }
 
-rt <- plot_func(acc_buf, spd_group, youbike_100m_count)
-# rt <- plot_func(acc_buf, spd_group, 道路型態子類別名稱)
+# rt <- plot_func(acc_buf, spd_group, youbike_100m_count)
+rt <- plot_func(acc_buf, spd_group, 道路型態子類別名稱)
 
-# rt%>%filter(道路型態子類別名稱=='圓環')%>%
-#   ggplot()+
-#   geom_col(aes(x=spd_group, y=prop, fill=spd_group),
-#            position = position_dodge(width = 0.9))+
-#   geom_text(aes(x=spd_group, y=prop, label=n),
-#             position = position_dodge(width = 0.9),
-#             vjust = -0.5)
+rt%>%
+  filter(道路型態子類別名稱=='圓環')%>%
+  ggplot()+
+  geom_col(aes(x=spd_group, y=prop, fill=spd_group),
+           position = position_dodge(width = 0.9))+
+  geom_text(aes(x=spd_group, y=prop, label=n), position = position_dodge(width = 0.9), hjust = -0.1) +
+  coord_flip()
 
 rt%>%colnames()
 rt$youbike_100m_count <- case_when(
@@ -138,7 +152,7 @@ rt%>%
   ggplot(aes(x = youbike_100m_count, y = prop, fill = spd_group)) +
   geom_col(position = position_dodge(width = 0.9)) +
   labs(x = "youbike_100m_count", fill = "spd_group") +
-  geom_text(aes(label = n),
-            position = position_dodge(width = 0.9),
-            vjust = -0.5)
+  geom_text(aes(label = n), position = position_dodge(width = 0.9), hjust = -0.1)+
+  coord_flip()
+
 
