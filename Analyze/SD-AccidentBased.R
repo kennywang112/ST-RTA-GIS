@@ -160,16 +160,13 @@ for (i in lst) {
 }
 plot_func(acc_buf, spd_group, 事故類型及型態大類別名稱, type='percent')
 
-
-## 以有無速差為底
-ggplot(rt, aes(x = reorder(道路型態子類別名稱, ifelse(spd_group == "Speed Diff", prop, 0)),
-               y = prop, fill = spd_group)) +
-  geom_col() +
-  coord_flip() +
-  scale_y_continuous(labels = function(x) scales::percent(abs(x))) +
-  scale_fill_manual(values = c("No Speed Diff" = "#4682B4",
-                               "Speed Diff" = "#B22222"))
-
+cause_lookup_df <- stack(cause_mapping_list) %>%
+  rename(cause_detail = values, cause_category = ind)
+df_final <- acc_buf%>%
+  st_drop_geometry()%>%
+  left_join(cause_lookup_df, by = c(`肇因研判子類別名稱-主要` = "cause_detail"))
+plot_func(df_final, spd_group, cause_category, type='percent')
+# plot_func(acc_buf, spd_group, `肇因研判子類別名稱-主要`, type='percent')
 
 ##
 rt%>%
@@ -193,8 +190,7 @@ rt%>%
   geom_text(aes(label = n), position = position_dodge(width = 0.9), hjust = -0.1)+
   coord_flip()
 
-
-
+acc_buf$`肇因研判子類別名稱-主要`
 
 
 
