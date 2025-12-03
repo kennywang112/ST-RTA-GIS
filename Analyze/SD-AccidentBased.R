@@ -192,8 +192,6 @@ rt%>%
 
 acc_buf$`肇因研判子類別名稱-主要`
 
-
-
 # for poster
 rear_end <- acc_buf%>%
   st_drop_geometry()%>%
