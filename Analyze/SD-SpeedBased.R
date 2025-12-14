@@ -1,5 +1,6 @@
 ## 這裏是以速限差為中心buffer找資料點，但是應該使用youbike為基礎找速限差點點
 ## 大部分處理資料都在SD-AccidentBased
+## This is old version
 
 library(tmap)
 tmap_mode("view")

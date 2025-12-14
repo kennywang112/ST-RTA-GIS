@@ -158,7 +158,7 @@ for (i in lst) {
   p <- plot_func(acc_buf, spd_group, !!col_sym, type='percent')
   ggsave(paste0("Layouts/speed_diff_", i, ".png"), plot = p, width = 8, height = 6, dpi = 300)
 }
-plot_func(acc_buf, spd_group, 事故類型及型態大類別名稱, type='percent')
+plot_func(acc_buf, spd_group, `車道劃分設施-分向設施子類別名稱`, type='percent')
 
 cause_lookup_df <- stack(cause_mapping_list) %>%
   rename(cause_detail = values, cause_category = ind)
@@ -168,7 +168,7 @@ df_final <- acc_buf%>%
 plot_func(df_final, spd_group, cause_category, type='percent')
 # plot_func(acc_buf, spd_group, `肇因研判子類別名稱-主要`, type='percent')
 
-##
+## Roundabout and Youbike analysis
 rt%>%
   filter(道路型態子類別名稱=='圓環')%>%
   ggplot()+
