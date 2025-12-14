@@ -1,24 +1,22 @@
 library(tidyverse)
-library(MapperAlgo)
 library(igraph)
 library(networkD3)
 library(ggraph)
 library(tidygraph)
+library(MapperAlgo)
+library(parallel)
+library(doParallel)
 
 filter_data <- read_csv("../ST-RTA/ComputedDataV4/ForModel/filtered_dataV1.csv")
 filter_data%>%summary()
 
 source('../TDA-R/MapperAlgo/R/Plotter.R')
 
-all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
+all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features_gdf.csv")
 all_features$hotspot <- case_when(
   all_features$hotspot == 'Not Significant' ~ 0,
   TRUE ~ 1
 )
-
-all_features$`號誌-號誌種類名稱_行車管制號誌` <- ifelse(all_features$`號誌-號誌種類名稱_行車管制號誌` > 0, 1, 0)
-table(all_features[, c("hotspot", "號誌-號誌種類名稱_行車管制號誌")])
-
 
 all_features <- all_features%>%
   mutate(
@@ -40,29 +38,29 @@ all_features <- all_features%>%
   )
 
 all_features$bn_feature%>%table()
-
+all_features$`車道劃分設施-分道設施-路面邊線名稱_無 x 當事者區分-類別-大類別名稱-車種_小客車(含客、貨兩用) x cause-group_Decision`
 # normalize
 n_data <- as.data.frame(scale(filter_data))
 
 time_taken <- system.time({
   Mapper <- MapperAlgo(
     filter_values = n_data[,1:5],
-    percent_overlap = 0.3,
+    percent_overlap = 0.5,
     # methods = "dbscan",
     # method_params = list(eps = 0.3, minPts = 3),
     # methods = "hierarchical",
     # method_params = list(num_bins_when_clustering = 10, method = 'ward.D2'),
     methods = "kmeans",
-    method_params = list(max_kmeans_clusters = 3),
+    method_params = list(max_kmeans_clusters = 5),
     # methods = "pam",
     # method_params = list(num_clusters = 2),
     cover_type = 'stride',
     # intervals = 4,
-    interval_width = 1.5,
+    interval_width = 1.6,
     num_cores = 12
   )
 })
-
+# `車道劃分設施-分道設施-路面邊線名稱_無 x 當事者區分-類別-大類別名稱-車種_小客車(含客、貨兩用) x cause-group_Decision`
 MapperPlotter(Mapper,
               label=all_features$hotspot,
               data=filter_data,
@@ -102,9 +100,9 @@ urban <- CPEmbedding(Mapper, all_features,
 # plot
 MapperPlotter(Mapper,
               # label=all_features$merged_feature,
-              label=urban,
+              # label=urban,
               # label=all_features$hotspot,
-              # label=all_features$bn_feature,
+              label=all_features$bn_feature,
               data=filter_data,
               type="forceNetwork",
               avg=TRUE,
@@ -126,9 +124,4 @@ export_data <- list(
 )
 
 write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
-
-
-
-
-
 
