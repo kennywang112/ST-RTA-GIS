@@ -10,8 +10,6 @@ library(doParallel)
 filter_data <- read_csv("../ST-RTA/ComputedDataV4/ForModel/filtered_dataV1.csv")
 filter_data%>%summary()
 
-source('../TDA-R/MapperAlgo/R/Plotter.R')
-
 all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features_gdf.csv")
 all_features$hotspot <- case_when(
   all_features$hotspot == 'Not Significant' ~ 0,
@@ -60,6 +58,8 @@ time_taken <- system.time({
     num_cores = 12
   )
 })
+
+source('../TDA-R/MapperAlgo/R/Plotter.R')
 # `車道劃分設施-分道設施-路面邊線名稱_無 x 當事者區分-類別-大類別名稱-車種_小客車(含客、貨兩用) x cause-group_Decision`
 MapperPlotter(Mapper,
               label=all_features$hotspot,
@@ -113,6 +113,12 @@ source('../TDA-R/MapperAlgo/R/MapperCorrelation.R')
 MapperCorrelation(Mapper, data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot),  use_embedding = list(FALSE, FALSE))
 MapperCorrelation(Mapper, data = filter_data, labels = list(all_features$bn_feature, urban),  use_embedding = list(FALSE, TRUE))
 
+piv <- Mapper$points_in_vertex
+adj_indices <- which(Mapper$adjacency == 1, arr.ind = TRUE)
+adj_indices <- adj_indices[adj_indices[, 1] < adj_indices[, 2], , drop = FALSE]
+edge_weights <- apply(adj_indices, 1, function(idx) {
+  length(intersect(piv[[idx[1]]], piv[[idx[2]]]))
+})
 
 library(jsonlite)
 export_data <- list(
@@ -120,7 +126,7 @@ export_data <- list(
   num_vertices = Mapper$num_vertices,
   level_of_vertex = Mapper$level_of_vertex,
   points_in_vertex = Mapper$points_in_vertex,
-  original_data = as.data.frame(all_features)
+  # original_data = as.data.frame(all_features)
 )
 
 write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
