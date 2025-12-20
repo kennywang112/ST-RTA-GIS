@@ -5,3 +5,5 @@ CalculatedData
 .RData
 QGIS
 Layouts/*
+.RDataTmp
+.RDataTmp1

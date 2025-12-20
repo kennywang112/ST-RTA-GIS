@@ -10,7 +10,8 @@ library(doParallel)
 filter_data <- read_csv("../ST-RTA/ComputedDataV4/ForModel/filtered_dataV1.csv")
 filter_data%>%summary()
 
-all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features_gdf.csv")
+# all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features_gdf.csv")
+all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
 all_features$hotspot <- case_when(
   all_features$hotspot == 'Not Significant' ~ 0,
   TRUE ~ 1
@@ -49,7 +50,7 @@ time_taken <- system.time({
     # methods = "hierarchical",
     # method_params = list(num_bins_when_clustering = 10, method = 'ward.D2'),
     methods = "kmeans",
-    method_params = list(max_kmeans_clusters = 5),
+    method_params = list(max_kmeans_clusters = 4),
     # methods = "pam",
     # method_params = list(num_clusters = 2),
     cover_type = 'stride',
@@ -120,14 +121,44 @@ edge_weights <- apply(adj_indices, 1, function(idx) {
   length(intersect(piv[[idx[1]]], piv[[idx[2]]]))
 })
 
+
+################# SNA ###################
+adj_matrix <- Mapper$adjacency
+
+adj_list <- lapply(1:Mapper$num_vertices, function(i) {
+  neighbors <- which(adj_matrix[i, ] > 0)
+  return(neighbors[neighbors != i]) # 移除自己
+})
+# find total unique indices
+uniq_idx <- sort(unique(unlist(Mapper$points_in_vertex, use.names = FALSE)))
+length(uniq_idx) == dim(all_features)[1]
+
+## Betweenness and Eigenvector Centrality
+g <- graph_from_adjacency_matrix(Mapper$adjacency, mode = "undirected")
+e_result <- eigen_centrality(g)
+e_scores <- e_result$vector
+b_scores <- betweenness(g, normalized = TRUE)
+# 找橋樑
+top_nodes <- sort(b_scores, decreasing = TRUE)
+print(head(top_nodes, 10))
+
+source('./Analyze/SNAplot.R')
+MapperPlotterV2(
+  Mapper,
+  label = e_scores,
+  data = filter_data,
+  is_node_attribute = TRUE
+)
+
+
+################ save ################
 library(jsonlite)
 export_data <- list(
   adjacency = Mapper$adjacency,
   num_vertices = Mapper$num_vertices,
   level_of_vertex = Mapper$level_of_vertex,
   points_in_vertex = Mapper$points_in_vertex,
-  # original_data = as.data.frame(all_features)
+  original_data = as.data.frame(all_features)
 )
 
 write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
-
