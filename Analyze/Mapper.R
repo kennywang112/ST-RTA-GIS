@@ -3,9 +3,17 @@ library(igraph)
 library(networkD3)
 library(ggraph)
 library(tidygraph)
-library(MapperAlgo)
+# library(MapperAlgo)
 library(parallel)
 library(doParallel)
+
+source('../TDA-R/MapperAlgo/R/EdgeVertices.R')
+source('../TDA-R/MapperAlgo/R/ConvertLevelsets.R')
+source('../TDA-R/MapperAlgo/R/Cover.R')
+source('../TDA-R/MapperAlgo/R/Cluster.R')
+source('../TDA-R/MapperAlgo/R/SimplicialComplex.R')
+source('../TDA-R/MapperAlgo/R/MapperAlgo.R')
+source('../TDA-R/MapperAlgo/R/Plotter.R')
 
 filter_data <- read_csv("../ST-RTA/ComputedDataV4/ForModel/filtered_dataV1.csv")
 filter_data%>%summary()
@@ -40,31 +48,59 @@ all_features$bn_feature%>%table()
 all_features$`車道劃分設施-分道設施-路面邊線名稱_無 x 當事者區分-類別-大類別名稱-車種_小客車(含客、貨兩用) x cause-group_Decision`
 # normalize
 n_data <- as.data.frame(scale(filter_data))
+n_data%>%summary()
+
+plot_data <- n_data %>%
+  mutate(is_hotspot = factor(all_features$hotspot)) %>%
+  pivot_longer(cols = -is_hotspot, names_to = "variable", values_to = "value")
+
+plot_data %>%
+  ggplot(aes(x = value, fill = is_hotspot)) +
+  geom_histogram(bins = 50, color = "white", alpha = 0.8, position = "stack") +
+  facet_wrap(~variable, scales = "free") +
+  # Manual color scale with English labels
+  scale_fill_manual(values = c("0" = "#999999", "1" = "#E63946"),
+                    name = "Hotspot Status",  labels = c("No", "Yes")) +
+  theme_minimal() +
+  labs(title = "Distribution of Variables by Hotspot Status",
+       subtitle = "Red indicates hotspot occurrences within the value range",
+       x = "Normalized Value",
+       y = "Frequency") +
+  theme(legend.position = "top")
+
+
+data <- all_features%>%select(-hotspot)
 
 time_taken <- system.time({
   Mapper <- MapperAlgo(
-    filter_values = n_data[,1:5],
+    data = data,
+    filter_values = n_data[,1:3],
     percent_overlap = 0.5,
     # methods = "dbscan",
     # method_params = list(eps = 0.3, minPts = 3),
     # methods = "hierarchical",
-    # method_params = list(num_bins_when_clustering = 10, method = 'ward.D2'),
+    # method_params = list(num_bins_when_clustering = 5, method = 'ward.D2'),
     methods = "kmeans",
-    method_params = list(max_kmeans_clusters = 4),
+    method_params = list(max_kmeans_clusters = 3),
     # methods = "pam",
     # method_params = list(num_clusters = 2),
     cover_type = 'stride',
     # intervals = 4,
-    interval_width = 1.6,
+    interval_width = 0.7,
     num_cores = 12
   )
 })
 
-source('../TDA-R/MapperAlgo/R/Plotter.R')
+length(Mapper$points_in_level_set)
+unique_indexes <- unique(unlist(Mapper$points_in_vertex))
+unique_indexes%>%length()
+unique_levelset <- unique(unlist(Mapper$points_in_level_set))
+unique_levelset%>%length()
+
 # `車道劃分設施-分道設施-路面邊線名稱_無 x 當事者區分-類別-大類別名稱-車種_小客車(含客、貨兩用) x cause-group_Decision`
 MapperPlotter(Mapper,
               label=all_features$hotspot,
-              data=filter_data,
+              data=data,
               type="forceNetwork",
               avg=TRUE,
               use_embedding=FALSE)
@@ -121,37 +157,6 @@ edge_weights <- apply(adj_indices, 1, function(idx) {
   length(intersect(piv[[idx[1]]], piv[[idx[2]]]))
 })
 
-
-################# SNA ###################
-adj_matrix <- Mapper$adjacency
-
-adj_list <- lapply(1:Mapper$num_vertices, function(i) {
-  neighbors <- which(adj_matrix[i, ] > 0)
-  return(neighbors[neighbors != i]) # 移除自己
-})
-# find total unique indices
-uniq_idx <- sort(unique(unlist(Mapper$points_in_vertex, use.names = FALSE)))
-length(uniq_idx) == dim(all_features)[1]
-
-## Betweenness and Eigenvector Centrality
-g <- graph_from_adjacency_matrix(Mapper$adjacency, mode = "undirected")
-e_result <- eigen_centrality(g)
-e_scores <- e_result$vector
-b_scores <- betweenness(g, normalized = TRUE)
-# 找橋樑
-top_nodes <- sort(b_scores, decreasing = TRUE)
-print(head(top_nodes, 10))
-
-source('./Analyze/SNAplot.R')
-MapperPlotterV2(
-  Mapper,
-  label = e_scores,
-  data = filter_data,
-  is_node_attribute = TRUE
-)
-
-
-################ save ################
 library(jsonlite)
 export_data <- list(
   adjacency = Mapper$adjacency,

@@ -28,7 +28,7 @@ MapperPlotterV2 <- function(
 
   if (is_node_attribute) {
     if (length(label) != num_vertices) {
-      stop(paste("錯誤：label 的長度 (", length(label), ") 與節點數量 (", num_vertices, ") 不符。請檢查是否傳入了正確的節點分數。"))
+      stop(paste("Error: The length of label (", length(label), ") does not match the number of nodes (", num_vertices, "). Please check if the correct node scores are provided."))
     }
     Group_col <- label
     color_title <- "Node Attribute"
