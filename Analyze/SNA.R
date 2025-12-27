@@ -1,4 +1,3 @@
-################# SNA ###################
 adj_matrix <- Mapper$adjacency
 
 adj_list <- lapply(1:Mapper$num_vertices, function(i) {
@@ -45,3 +44,43 @@ b_scores
 
 length(g)
 length(e_scores)
+
+features <- tibble(
+  eigen_centrality = e_scores,
+  betweenness = b_scores,
+  neighbors = adj_list,
+  points_in_vertex = Mapper$points_in_vertex
+)
+
+all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
+grid_filter <- read_csv("../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
+combined_data <- read_csv("../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
+all_features_grid <- cbind(all_features, grid_filter)
+
+filter_features <- features%>%
+  mutate(
+    neighbor_points = map(neighbors, function(nbr_ids) {
+      # get all points in neighbor vertices
+      points_list <- points_in_vertex[nbr_ids]
+      all_nbr_points <- unlist(points_list)
+      unique(all_nbr_points)
+    })
+  )%>%
+  filter(!map_lgl(neighbor_points, is.null))
+
+top_10_betweenness <- filter_features%>%arrange(desc(betweenness))%>%head(10)
+
+length(unlist(top_10_betweenness$points_in_vertex))
+top_betweenness_features <- all_features_grid[unlist(top_10_betweenness$points_in_vertex),]
+rest_of_features <- all_features_grid[-unlist(top_10_betweenness$points_in_vertex),]
+
+raw_indices <- unlist(top_10_betweenness$points_in_vertex)
+unique_indices <- unique(raw_indices)
+length(unlist(top_betweenness_features$grid_filter))
+length(unique(unlist(top_betweenness_features$grid_filter)))
+
+top_betweenness_combined <- combined_data[unique_indices, ]
+rest_of_combined <- combined_data[-unique_indices, ]
+
+dim(rest_of_combined)[1] + dim(top_betweenness_combined)[1] == dim(combined_data)[1]
+

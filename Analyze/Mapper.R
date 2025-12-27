@@ -3,7 +3,6 @@ library(igraph)
 library(networkD3)
 library(ggraph)
 library(tidygraph)
-# library(MapperAlgo)
 library(parallel)
 library(doParallel)
 
