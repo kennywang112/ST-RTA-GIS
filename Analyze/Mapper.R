@@ -44,7 +44,6 @@ all_features <- all_features%>%
   )
 
 all_features$bn_feature%>%table()
-all_features$`車道劃分設施-分道設施-路面邊線名稱_無 x 當事者區分-類別-大類別名稱-車種_小客車(含客、貨兩用) x cause-group_Decision`
 # normalize
 n_data <- as.data.frame(scale(filter_data))
 n_data%>%summary()
@@ -146,8 +145,8 @@ MapperPlotter(Mapper,
 
 
 source('../TDA-R/MapperAlgo/R/MapperCorrelation.R')
-MapperCorrelation(Mapper, data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot),  use_embedding = list(FALSE, FALSE))
-MapperCorrelation(Mapper, data = filter_data, labels = list(all_features$bn_feature, urban),  use_embedding = list(FALSE, TRUE))
+MapperCorrelation(Mapper, original_data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot), use_embedding = list(FALSE, FALSE))
+MapperCorrelation(Mapper, original_data = filter_data, labels = list(all_features$bn_feature, urban),  use_embedding = list(FALSE, TRUE))
 
 piv <- Mapper$points_in_vertex
 adj_indices <- which(Mapper$adjacency == 1, arr.ind = TRUE)
@@ -156,13 +155,20 @@ edge_weights <- apply(adj_indices, 1, function(idx) {
   length(intersect(piv[[idx[1]]], piv[[idx[2]]]))
 })
 
+cc <- tibble(
+  eigen_centrality = e_scores,
+  betweenness = b_scores,
+)
+
 library(jsonlite)
 export_data <- list(
   adjacency = Mapper$adjacency,
   num_vertices = Mapper$num_vertices,
   level_of_vertex = Mapper$level_of_vertex,
   points_in_vertex = Mapper$points_in_vertex,
-  original_data = as.data.frame(all_features)
+  original_data = as.data.frame(all_features),
+  # this is the label that already calculated for each node
+  cc = cc
 )
 
 write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
