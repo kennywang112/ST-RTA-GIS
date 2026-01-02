@@ -103,35 +103,40 @@ cols <- c(
 
 source('./utils/model.R')
 # Analyze betweenness top 10 nodes
-filter_features%>%arrange(desc(betweenness))%>%head(5)
-betweenness_info <- model_from_node(filter_features, betweenness, cols, top_k = 10)
-ggplot(betweenness_info$importance_df, aes(x = Importance, y = Variable, color = Direction)) +
+bdt <- get_model_data(filter_features, betweenness, top_k = 10)
+betweenness_info <- model_from_node(bdt[[1]], bdt[[2]])
+# betweenness_tree <- tree_model_from_node(bdt[[1]], bdt[[2]], cols, cp_value=0.001)
+betweenness_info$accuracy
+betweenness_info$confusion_matrix
+
+betweenness_info$importance_df%>%
+  filter(Importance > 1.96)%>%
+  ggplot(aes(x = Importance, y = Variable, color = Direction)) +
   geom_segment(aes(x = 0, xend = Importance, y = Variable, yend = Variable), linewidth = 1) +
   geom_point(size = 4) +
   scale_color_manual(values = c("Positive" = "#E41A1C", "Negative" = "#377EB8")) +
   theme_minimal()
-
-plot_data <- betweenness_info$importance_df
-plot_data$Variable <- reorder(plot_data$Variable, plot_data$OddsRatio)
-plot_data$ColorType <- ifelse(plot_data$OddsRatio > 1, "Increase Risk (>1)", "Decrease Risk (<1)")
-ggplot(plot_data, aes(x = OddsRatio, y = Variable, color = ColorType)) +
-  geom_point(size = 3) +
-  geom_segment(aes(x = 1, xend = OddsRatio, y = Variable, yend = Variable)) +
-  geom_vline(xintercept = 1, linetype = "dashed", color = "gray50") +
-  scale_color_manual(values = c("Increase Risk (>1)" = "#E41A1C",
-                                "Decrease Risk (<1)" = "#377EB8")) +
-  theme_minimal() +
-  labs(title = "Feature Odds Ratios", x = "Odds Ratio", y = "Variable", color = "Effect") +
-  theme(legend.position = "bottom")
 
 # Analyze eigen_centrality top 10 nodes
-eigen_info <- model_from_node(filter_features, eigen_centrality, cols, top_k = 10)
+edt <- get_model_data(filter_features, eigen_centrality, top_k = 10)
+eigen_info <- model_from_node(edt[[1]], edt[[2]], cols)
+# eigen_tree <- tree_model_from_node(edt[[1]], edt[[2]], cols, cp_value=0.002)
+eigen_info$accuracy
 
-ggplot(eigen_info$importance_df, aes(x = Importance, y = Variable, color = Direction)) +
+eigen_info$importance_df%>%
+  filter(Importance > 1.96)%>%
+  ggplot(aes(x = Importance, y = Variable, color = Direction)) +
   geom_segment(aes(x = 0, xend = Importance, y = Variable, yend = Variable), linewidth = 1) +
   geom_point(size = 4) +
   scale_color_manual(values = c("Positive" = "#E41A1C", "Negative" = "#377EB8")) +
   theme_minimal()
+
+
+betweenness_info$importance_df$type <- 'betwenness'
+eigen_info$importance_df$type <- 'eigen_centrality'
+fdt <- rbind(betweenness_info$importance_df, eigen_info$importance_df)%>%
+  filter(Importance > 1.96)
+fdt
 
 # 下一步: 分析節點周圍特徵的種類
 # 熱點最集中的特徵以及非熱點最集中的特徵是什麼

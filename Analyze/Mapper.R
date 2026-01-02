@@ -71,7 +71,7 @@ data <- all_features%>%select(-hotspot)
 
 time_taken <- system.time({
   Mapper <- MapperAlgo(
-    data = data,
+    original_data = data,
     filter_values = n_data[,1:3],
     percent_overlap = 0.5,
     # methods = "dbscan",
@@ -98,7 +98,7 @@ unique_levelset%>%length()
 # `車道劃分設施-分道設施-路面邊線名稱_無 x 當事者區分-類別-大類別名稱-車種_小客車(含客、貨兩用) x cause-group_Decision`
 MapperPlotter(Mapper,
               label=all_features$hotspot,
-              data=data,
+              original_data=data,
               type="forceNetwork",
               avg=TRUE,
               use_embedding=FALSE)
