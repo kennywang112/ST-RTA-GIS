@@ -1,3 +1,7 @@
+# try entropy !!
+
+source('./utils/model.R')
+
 adj_matrix <- Mapper$adjacency
 
 adj_list <- lapply(1:Mapper$num_vertices, function(i) {
@@ -62,10 +66,11 @@ length(g)
 length(e_scores)
 
 features <- tibble(
+  size = node_sizes <- sapply(Mapper$points_in_vertex, length),
   eigen_centrality = e_scores,
   betweenness = b_scores,
-  neighbors = adj_list,
-  points_in_vertex = Mapper$points_in_vertex
+  neighbors = adj_list, # neighbor vertex indices
+  points_in_vertex = Mapper$points_in_vertex # original data indices in each vertex
 )
 
 # all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
@@ -80,9 +85,19 @@ filter_features <- features%>%
       points_list <- points_in_vertex[nbr_ids]
       all_nbr_points <- unlist(points_list)
       unique(all_nbr_points)
-    })
+    }),
+    # count of neighbor points
+    neighbor_point_size = sapply(neighbor_points, length),
+    # count of neighbor nodes
+    neighbor_node_size = sapply(adj_list, length)
   )%>%
   filter(!map_lgl(neighbor_points, is.null))
+
+library(GGally)
+ggpairs(filter_features,
+        columns = c("size", "eigen_centrality", "betweenness",
+                    "neighbor_point_size", "neighbor_node_size"),
+        upper = list(continuous = wrap("cor", method = "spearman")))
 
 cols <- c(
   '車道劃分設施-分道設施-快車道或一般車道間名稱',
@@ -104,7 +119,7 @@ cols <- c(
 source('./utils/model.R')
 # Analyze betweenness top 10 nodes
 bdt <- get_model_data(filter_features, betweenness, top_k = 10)
-betweenness_info <- model_from_node(bdt[[1]], bdt[[2]])
+betweenness_info <- model_from_node(bdt[[1]], bdt[[2]], cols)
 # betweenness_tree <- tree_model_from_node(bdt[[1]], bdt[[2]], cols, cp_value=0.001)
 betweenness_info$accuracy
 betweenness_info$confusion_matrix
@@ -116,6 +131,8 @@ betweenness_info$importance_df%>%
   geom_point(size = 4) +
   scale_color_manual(values = c("Positive" = "#E41A1C", "Negative" = "#377EB8")) +
   theme_minimal()
+
+betweenness_info$top_group
 
 # Analyze eigen_centrality top 10 nodes
 edt <- get_model_data(filter_features, eigen_centrality, top_k = 10)

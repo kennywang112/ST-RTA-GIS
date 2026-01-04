@@ -19,17 +19,17 @@ get_model_data <- function(features, sort_metric, top_k = 30) {
   rest_of_features <- all_features_grid[-unique_indices,]
   print(dim(top_grid_features)[1] + dim(rest_of_features)[1] == dim(all_features_grid)[1])
 
-  top_combined <- top_grid_features
-  rest_of_combined <- rest_of_features
-  # # get original data
-  # library(jsonlite)
-  # parsed_list <- lapply(top_grid_features$grid_filter, fromJSON)
-  # ## all of the overlapped data will classified into top group
-  # top_combined_data_indices <- unique(unlist(parsed_list))
-  #
-  # top_combined <- combined_data[top_combined_data_indices, ]
-  # rest_of_combined <- combined_data[-top_combined_data_indices, ]
-  # print(dim(rest_of_combined)[1] + dim(top_combined)[1] == dim(combined_data)[1])
+  # top_combined <- top_grid_features
+  # rest_of_combined <- rest_of_features
+  # get original data
+  library(jsonlite)
+  parsed_list <- lapply(top_grid_features$grid_filter, fromJSON)
+  ## all of the overlapped data will classified into top group
+  top_combined_data_indices <- unique(unlist(parsed_list))
+
+  top_combined <- combined_data[top_combined_data_indices, ]
+  rest_of_combined <- combined_data[-top_combined_data_indices, ]
+  print(dim(rest_of_combined)[1] + dim(top_combined)[1] == dim(combined_data)[1])
 
   return(list(top_combined, rest_of_combined))
 }
@@ -52,6 +52,7 @@ model_from_node <- function(
   n_top <- nrow(top_data)
   set.seed(123)
   rest_data_balanced <- rest_data %>% sample_n(size = n_top)
+  message(paste0("Balanced: ", n_top, " samples."))
 
   train_data <- na.omit(rbind(top_data, rest_data_balanced))
 
