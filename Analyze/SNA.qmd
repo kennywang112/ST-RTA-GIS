@@ -1,4 +1,20 @@
-source('./utils/model.R')
+---
+title: "SNA"
+format: html
+editor: visual
+---
+
+```{r}
+getwd()
+```
+
+## Social Network Analysis
+
+This is to get the eigen centrality and betweenness
+
+```{r}
+
+source('../utils/model.R')
 
 adj_matrix <- Mapper$adjacency
 
@@ -15,6 +31,7 @@ g <- graph_from_adjacency_matrix(Mapper$adjacency, mode = "undirected")
 e_result <- eigen_centrality(g)
 e_scores <- e_result$vector
 b_scores <- betweenness(g, weights = NA, normalized = TRUE)
+
 # 找橋樑
 top_nodes <- sort(b_scores, decreasing = TRUE)
 print(head(top_nodes, 10))
@@ -25,8 +42,12 @@ b_labels[top_10_indices] <- 1
 e_labels <- rep(0, length(e_scores))
 top_10_eigen_indices <- head(order(e_scores, decreasing = TRUE), 10)
 e_labels[top_10_eigen_indices] <- 1
+```
 
-########################this is for edge weighting############################
+This is for adding weighting for eigen centrality edges
+
+```{r}
+
 node_sizes <- pmax(sapply(Mapper$points_in_vertex, length), 1)
 g <- graph_from_adjacency_matrix(Mapper$adjacency, mode = "undirected")
 
@@ -49,7 +70,12 @@ MapperPlotterV2(
   data = filter_data,
   is_node_attribute = TRUE
 )
-####################################################
+```
+
+## Mapper algorithm plot
+
+```{r}
+
 
 source('./Analyze/SNAplot.R')
 MapperPlotterV2(
@@ -70,7 +96,16 @@ MapperPlotterV2(
   is_node_attribute = FALSE
 )
 
-####################### save model
+```
+
+Save plot
+
+```{r}
+
+cc <- tibble(
+  eigen_centrality = e_scores,
+  betweenness = b_scores,
+)
 
 library(jsonlite)
 export_data <- list(
@@ -80,24 +115,18 @@ export_data <- list(
   points_in_vertex = Mapper$points_in_vertex,
   original_data = as.data.frame(all_features),
   # this is the label that already calculated for each node
-  cc = tibble(
-    eigen_centrality = e_scores,
-    betweenness = b_scores,
-    weighted_betweenness = b_scores_weighted
-  )
+  cc = cc
 )
 
 write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
+```
 
-#######################
+Get node features
 
-
-source('../TDA-R/MapperAlgo/R/MapperCorrelation.R')
-MapperCorrelation(Mapper, original_data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot), use_embedding = list(FALSE, FALSE))
+```{r}
 
 length(g)
 length(e_scores)
-
 features <- tibble(
   size = node_sizes <- sapply(Mapper$points_in_vertex, length),
   eigen_centrality = e_scores,
@@ -107,15 +136,9 @@ features <- tibble(
 )
 
 # all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
-grid_filter <- read_csv("../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
-combined_data <- read_csv("../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
+grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
+combined_data <- read_csv("../../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
 all_features_grid <- cbind(all_features, grid_filter)
-
-node_hotspot_values <- vapply(Mapper$points_in_vertex, function(idx) {
-  mean(all_features$hotspot[idx], na.rm = TRUE)
-}, numeric(1))
-
-features$hotspot <- node_hotspot_values
 
 filter_features <- features%>%
   mutate(
@@ -131,18 +154,29 @@ filter_features <- features%>%
     neighbor_node_size = sapply(adj_list, length)
   )%>%
   filter(!map_lgl(neighbor_points, is.null))
+```
 
-ggpairs(filter_features,
-        columns = c("eigen_centrality", "hotspot"),
-        upper = list(continuous = wrap("cor", method = "spearman")))
+correlation plot
 
-
+```{r}
 # correlation plot
 library(GGally)
 ggpairs(filter_features,
         columns = c("size", "eigen_centrality", "betweenness",
-                    "neighbor_point_size", "neighbor_node_size", "hotspot"),
+                    "neighbor_point_size", "neighbor_node_size"),
         upper = list(continuous = wrap("cor", method = "spearman")))
+```
+
+# Model
+
+This block show the logistic regression and tree model to fit:
+
+1.  betweenness VS rest data
+2.  eigen centrality VS rest data
+
+The result is aroud 0.5, very bad
+
+```{r}
 
 cols <- c(
   '車道劃分設施-分道設施-快車道或一般車道間名稱',
@@ -199,92 +233,4 @@ eigen_info$importance_df$type <- 'eigen_centrality'
 fdt <- rbind(betweenness_info$importance_df, eigen_info$importance_df)%>%
   filter(Importance > 1.96)
 fdt
-
-
-####################### EDA betweenness and eigenvector centrality nodes
-cols_eda <- c(
-  '車道劃分設施-分道設施-快車道或一般車道間名稱',
-  '車道劃分設施-分道設施-快慢車道間名稱',
-  '車道劃分設施-分道設施-路面邊線名稱',
-  '車道劃分設施-分向設施大類別名稱',
-  '事故類型及型態大類別名稱',
-  '道路型態大類別名稱',
-  '號誌-號誌種類名稱',
-  '速限-第1當事者'
-)
-
-combined_data_id <- combined_data %>% mutate(temp_id = row_number())
-ids_in_betweenness <- combined_data_id %>% semi_join(betweenness_info$top_group) %>% pull(temp_id)
-ids_in_eigen <- combined_data_id %>% semi_join(eigen_info$top_group) %>% pull(temp_id)
-
-eda_dt <- combined_data_id %>%
-  mutate(
-    group = case_when(
-      temp_id %in% ids_in_betweenness & temp_id %in% ids_in_eigen ~ "Common",
-      temp_id %in% ids_in_betweenness ~ "Betweenness Only",
-      temp_id %in% ids_in_eigen ~ "Eigen Only",
-      TRUE ~ "Rest"
-    )
-  )
-labeled_data%>%
-  group_by(group) %>%
-  summarise(count = n())
-
-dir.create("Data/output_plots", showWarnings = FALSE)
-
-# calculate proportion plots
-for (col in cols_eda) {
-
-  p <- ggplot(eda_dt, aes(x = group)) +
-    geom_bar(aes(fill = .data[[col]]), position = "fill") +
-    theme_minimal(base_family = "PingFang TC") +
-    scale_y_continuous(labels = scales::percent) +
-    labs(title = paste("Distribution of", col, "by Node Centrality"),
-         fill = col)
-  print(p)
-  message(paste("正在儲存:", col))
-
-  file_name <- paste0("Data/output_plots/", col, ".png")
-
-  ggsave(filename = file_name, plot = p, width = 10, height = 6, bg = "white")
-}
-# calculate similarity matrix plots
-for (col in cols_eda) {
-  prop_data <- eda_dt %>%
-    rename(Region = all_of("group"), Category = all_of(col)) %>%
-    filter(!is.na(Region), !is.na(Category)) %>%
-    count(Region, Category) %>%
-    group_by(Region) %>%
-    mutate(ratio = n / sum(n)) %>%
-    ungroup() %>%
-    select(Region, Category, ratio)
-
-  matrix_data <- prop_data %>%
-    pivot_wider(names_from = Category, values_from = ratio, values_fill = 0) %>%
-    tibble::column_to_rownames("Region") %>%
-    as.matrix()
-  cosine_sim <- function(mat) {
-    sim <- mat / sqrt(rowSums(mat * mat))
-    return(sim %*% t(sim))
-  }
-  similarity_matrix <- cosine_sim(matrix_data)
-  plot_data <- as.data.frame(as.table(similarity_matrix))
-  colnames(plot_data) <- c("Region1", "Region2", "Similarity")
-
-  pp <- ggplot(plot_data, aes(x = Region1, y = Region2, fill = Similarity)) +
-    geom_tile(color = "white") +
-    geom_text(aes(label = round(Similarity, 4)), color = "white", size = 3) +
-    scale_fill_distiller(palette = "YlGnBu", direction = 1, limits = c(0.7, 1)) +
-    theme_minimal() +
-    labs(title = paste("Similarity of", col, "proportions across cities"),
-         x = "County/City",
-         y = "County/City") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-    coord_fixed()
-
-  file_name <- paste0("Data/output_plots/matrix_", col, ".png")
-  ggsave(filename = file_name, plot = pp, width = 10, height = 6, bg = "white")
-}
-
-
-
+```

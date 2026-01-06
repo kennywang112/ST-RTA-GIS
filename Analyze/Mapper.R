@@ -154,21 +154,3 @@ adj_indices <- adj_indices[adj_indices[, 1] < adj_indices[, 2], , drop = FALSE]
 edge_weights <- apply(adj_indices, 1, function(idx) {
   length(intersect(piv[[idx[1]]], piv[[idx[2]]]))
 })
-
-cc <- tibble(
-  eigen_centrality = e_scores,
-  betweenness = b_scores,
-)
-
-library(jsonlite)
-export_data <- list(
-  adjacency = Mapper$adjacency,
-  num_vertices = Mapper$num_vertices,
-  level_of_vertex = Mapper$level_of_vertex,
-  points_in_vertex = Mapper$points_in_vertex,
-  original_data = as.data.frame(all_features),
-  # this is the label that already calculated for each node
-  cc = cc
-)
-
-write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
