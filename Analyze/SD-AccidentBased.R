@@ -239,4 +239,3 @@ ggplot(full_type, aes(x = spd_group, y = prop, fill = type)) +
   geom_text(aes(label = scales::percent(prop, accuracy = 0.1)),
             position = position_dodge(width = 0.7),
             vjust = -0.5, size = 6)
-

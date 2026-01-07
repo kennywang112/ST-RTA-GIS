@@ -24,7 +24,6 @@ get_model_data <- function(
   # top_combined <- top_grid_features
   # rest_of_combined <- rest_of_features
   # get original data
-  library(jsonlite)
   parsed_list <- lapply(top_grid_features$grid_filter, fromJSON)
   ## all of the overlapped data will classified into top group
   top_combined_data_indices <- unique(unlist(parsed_list))
@@ -36,9 +35,21 @@ get_model_data <- function(
   return(list(top_combined, rest_of_combined))
 }
 
+get_hotspot_data <- function(
+    features
+    ) {
+
+  hotspot_features <- features %>% filter(hotspot > 0.2)
+  unique_indices <- unique(unlist(hotspot_features$points_in_vertex))
+  hotspot_grid_data <- all_features_grid[unique_indices, ]
+  non_hotspot_grid_data <- all_features_grid[-unique_indices, ]
+
+  return(list(hotspot_grid_data, non_hotspot_grid_data))
+}
+
 get_model_grid <- function(
     features, sort_metric, top_k = 30
-) {
+    ) {
 
   top_features <- features%>%arrange(desc({{sort_metric}}))%>%head(top_k)
 
@@ -55,6 +66,39 @@ get_model_grid <- function(
   rest_of_combined <- rest_of_features
 
   return(list(top_combined, rest_of_combined))
+}
+
+glm_report <- function(fdt) {
+  model <- glm(type ~ ., data = fdt, family = binomial)
+  summary(model)
+
+  probabilities <- predict(model, newdata = fdt, type = "response")
+  predicted_classes <- ifelse(probabilities > 0.5, 1, 0)
+
+  cm <- confusionMatrix(factor(predicted_classes, levels = c(0, 1)),
+                        factor(fdt$type, levels = c(0, 1)))
+  acc_value <- cm$overall['Accuracy']
+  imp <- varImp(model)
+  imp_df <- data.frame(
+    Variable = rownames(imp),
+    Importance = imp$Overall
+  )
+
+  coefs <- coef(model)
+  match_idx <- match(imp_df$Variable, names(coefs))
+  imp_df$Coefficient <- coefs[match_idx]
+  imp_df$Direction <- ifelse(imp_df$Coefficient > 0, "Betweenness", "Eigen")
+  imp_df <- imp_df[order(imp_df$Importance, decreasing = FALSE), ]
+  imp_df$Variable <- factor(imp_df$Variable, levels = imp_df$Variable)
+
+  odds_ratios <- exp(coef(model))
+  imp_df$OddsRatio <- odds_ratios[as.character(imp_df$Variable)]
+
+  return(list(
+    importance_df = imp_df,
+    accuracy = acc_value,
+    confusion_matrix = cm
+  ))
 }
 
 model_from_node <- function(
@@ -81,7 +125,7 @@ model_from_node <- function(
              .cols = where(is.numeric),
              .fns  = ~ replace_na(., mean(., na.rm = TRUE))
            ))
-  write.csv(fdt_filled,"./fdt_filled.csv", row.names = FALSE)
+  # write.csv(fdt_filled,"./fdt_filled.csv", row.names = FALSE)
 
   train_data <- fdt_filled %>% select(all_of(target_cols), type)
 
@@ -93,39 +137,9 @@ model_from_node <- function(
              .fns  = ~ replace_na(., mean(., na.rm = TRUE))
            ))
 
-  model <- glm(type ~ ., data = train_data, family = binomial)
-  model_summary <- summary(model)
+  result <- glm_report(train_data)
 
-  probabilities <- predict(model, newdata = train_data, type = "response")
-  predicted_classes <- ifelse(probabilities > 0.5, 1, 0)
-
-  cm <- confusionMatrix(factor(predicted_classes, levels = c(0, 1)),
-                        factor(train_data$type, levels = c(0, 1)))
-  acc_value <- cm$overall['Accuracy']
-  # This is to get odds ratio and confidence interval
-  # exp(cbind(OR = coef(model), confint(model)))
-
-  imp <- varImp(model)
-  imp_df <- data.frame(
-    Variable = rownames(imp),
-    Importance = imp$Overall
-  )
-
-  coefs <- coef(model)
-  match_idx <- match(imp_df$Variable, names(coefs))
-  imp_df$Coefficient <- coefs[match_idx]
-  imp_df$Direction <- ifelse(imp_df$Coefficient > 0, "Betweenness", "Eigen")
-  imp_df <- imp_df[order(imp_df$Importance, decreasing = FALSE), ]
-  imp_df$Variable <- factor(imp_df$Variable, levels = imp_df$Variable)
-
-  odds_ratios <- exp(coef(model))
-  imp_df$OddsRatio <- odds_ratios[as.character(imp_df$Variable)]
-
-  return(list(
-    importance_df = imp_df,
-    accuracy = acc_value,
-    confusion_matrix = cm
-  ))
+  return(result)
 }
 
 tree_model_from_node <- function(

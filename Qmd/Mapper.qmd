@@ -1,27 +1,34 @@
+```{r}
 library(tidyverse)
 library(igraph)
 library(networkD3)
 library(ggraph)
 library(tidygraph)
 library(parallel)
-library(doParallel)
+library(doParallel) 
 
-source('../TDA-R/MapperAlgo/R/EdgeVertices.R')
-source('../TDA-R/MapperAlgo/R/ConvertLevelsets.R')
-source('../TDA-R/MapperAlgo/R/Cover.R')
-source('../TDA-R/MapperAlgo/R/Cluster.R')
-source('../TDA-R/MapperAlgo/R/SimplicialComplex.R')
-source('../TDA-R/MapperAlgo/R/MapperAlgo.R')
-source('../TDA-R/MapperAlgo/R/Plotter.R')
+source('../../TDA-R/MapperAlgo/R/EdgeVertices.R')
+source('../../TDA-R/MapperAlgo/R/ConvertLevelsets.R')
+source('../../TDA-R/MapperAlgo/R/Cover.R')
+source('../../TDA-R/MapperAlgo/R/Cluster.R')
+source('../../TDA-R/MapperAlgo/R/SimplicialComplex.R')
+source('../../TDA-R/MapperAlgo/R/MapperAlgo.R')
+source('../../TDA-R/MapperAlgo/R/Plotter.R')
+```
 
-filter_data <- read_csv("../ST-RTA/ComputedDataV4/ForModel/filtered_dataV1.csv")
+```{r}
+
+filter_data <- read_csv("../../ST-RTA/ComputedDataV4/ForModel/filtered_dataV1.csv")
 filter_data%>%summary()
 
 # all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features_gdf.csv")
-all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
+all_features <- read_csv("../../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
 all_features$hotspot <- case_when(
   all_features$hotspot == 'Not Significant' ~ 0,
   TRUE ~ 1)
+```
+
+```{r}
 
 all_features <- all_features%>%
   mutate(
@@ -111,6 +118,12 @@ all_features <- all_features%>%
     )
   )
 
+
+```
+
+### Plot for each filter function
+
+```{r}
 all_features$bn_feature%>%table()
 # normalize
 n_data <- as.data.frame(scale(filter_data))
@@ -133,8 +146,11 @@ plot_data %>%
        x = "Normalized Value",
        y = "Frequency") +
   theme(legend.position = "top")
+```
 
+## Run Mapper Algorithm
 
+```{r}
 data <- all_features%>%select(-hotspot)
 
 time_taken <- system.time({
@@ -157,6 +173,9 @@ time_taken <- system.time({
   )
 })
 
+```
+
+```{r}
 length(Mapper$points_in_level_set)
 unique_indexes <- unique(unlist(Mapper$points_in_vertex))
 unique_indexes%>%length()
@@ -172,7 +191,11 @@ MapperPlotter(Mapper,
 
 time_taken
 
+```
 
+## Test for other mapper
+
+```{r}
 # uniq_idx <- sort(unique(unlist(Mapper$points_in_vertex, use.names = FALSE)))
 # length(uniq_idx)
 source('../TDA-R/MapperAlgo/R/CPEmbedding.R')
@@ -220,3 +243,4 @@ adj_indices <- adj_indices[adj_indices[, 1] < adj_indices[, 2], , drop = FALSE]
 edge_weights <- apply(adj_indices, 1, function(idx) {
   length(intersect(piv[[idx[1]]], piv[[idx[2]]]))
 })
+```

@@ -1,5 +1,19 @@
-source('./utils/model.R')
+---
+title: "SNA"
+format: html
+editor: visual
+---
 
+```{r}
+getwd()
+source('./utils/model.R')
+```
+
+## Social Network Analysis
+
+This is to get the eigen centrality and betweenness
+
+```{r}
 adj_matrix <- Mapper$adjacency
 
 adj_list <- lapply(1:Mapper$num_vertices, function(i) {
@@ -24,8 +38,12 @@ b_labels[top_10_indices] <- 1
 e_labels <- rep(0, length(e_scores))
 top_10_eigen_indices <- head(order(e_scores, decreasing = TRUE), 10)
 e_labels[top_10_eigen_indices] <- 1
+```
 
-########################this is for edge weighting############################
+This is for adding weighting for eigen centrality edges
+
+```{r}
+
 node_sizes <- pmax(sapply(Mapper$points_in_vertex, length), 1)
 g <- graph_from_adjacency_matrix(Mapper$adjacency, mode = "undirected")
 
@@ -49,7 +67,6 @@ MapperPlotter(
   use_embedding=TRUE
 )
 
-
 calc_eigen_weight <- function(u, v) {
   size_u <- node_sizes[u]
   size_v <- node_sizes[v]
@@ -60,8 +77,13 @@ eigen_weights <- apply(edge_list, 1, function(x) calc_eigen_weight(x[1], x[2]))
 e_result_weighted <- eigen_centrality(g, weights = eigen_weights)
 e_scores_weighted <- e_result_weighted$vector
 
-####################################################
-source('../TDA-R/MapperAlgo/R/Plotter.R')
+```
+
+## Mapper algorithm plot
+
+```{r}
+
+source('../../TDA-R/MapperAlgo/R/Plotter.R')
 MapperPlotter(
   Mapper,
   label = e_scores,
@@ -79,8 +101,11 @@ MapperPlotter(
   avg=TRUE,
   use_embedding=FALSE
 )
-####################### save model
+```
 
+Save plot
+
+```{r}
 library(jsonlite)
 export_data <- list(
   adjacency = Mapper$adjacency,
@@ -99,13 +124,15 @@ export_data <- list(
     threshold_hotspot = features$hotspott
   )
 )
-
 write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
 
-#######################
+```
 
+Get node features
 
-source('../TDA-R/MapperAlgo/R/MapperCorrelation.R')
+```{r}
+
+source('../../TDA-R/MapperAlgo/R/MapperCorrelation.R')
 MapperCorrelation(Mapper, original_data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot), use_embedding = list(FALSE, FALSE))
 
 length(g)
@@ -120,8 +147,8 @@ features <- tibble(
 )
 
 # all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
-grid_filter <- read_csv("../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
-combined_data <- read_csv("../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
+grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
+combined_data <- read_csv("../../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
 all_features_grid <- cbind(all_features, grid_filter)
 
 node_hotspot_values <- vapply(Mapper$points_in_vertex, function(idx) {
@@ -130,16 +157,6 @@ node_hotspot_values <- vapply(Mapper$points_in_vertex, function(idx) {
 features$hotspot <- node_hotspot_values
 features <- features%>%
   mutate(hotspott = ifelse(hotspot > 0.2, 1, 0))
-
-MapperPlotter(
-  Mapper,
-  # label = e_scores,
-  label = features$hotspott,
-  # label = b_labels,
-  # label = b_scores,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
 
 filter_features <- features%>%
   mutate(
@@ -155,58 +172,23 @@ filter_features <- features%>%
     neighbor_node_size = sapply(adj_list, length)
   )%>%
   filter(!map_lgl(neighbor_points, is.null))
+```
 
-# correlation plot
+correlation plot
+
+```{r}
 library(GGally)
 ggpairs(filter_features,
         columns = c("size", "eigen_centrality", "betweenness",
                     "neighbor_point_size", "neighbor_node_size", "hotspot"),
         upper = list(continuous = wrap("cor", method = "spearman")))
+```
 
-cols <- c(
-  '車道劃分設施-分道設施-快車道或一般車道間名稱',
-  '車道劃分設施-分道設施-快慢車道間名稱',
-  '車道劃分設施-分道設施-路面邊線名稱',
-  '車道劃分設施-分向設施大類別名稱',
-  '事故類型及型態大類別名稱',
-  '道路型態大類別名稱',
-  '號誌-號誌種類名稱',
-  '速限-第1當事者',
-  'youbike_100m_count',
-  'mrt_100m_count',
-  'parkinglot_100m_count',
-  '當事者區分-類別-大類別名稱-車種',
-  'cause_group',
-  'type'
-)
+# EDA
 
-################################## model
-source('./utils/model.R')
-# Analyze betweenness top 10 nodes
-bdt <- get_model_data(filter_features, betweenness, top_k = 1)
-# betweenness_tree <- tree_model_from_node(bdt[[1]], bdt[[2]], cols, cp_value=0.001)
-# Analyze eigen_centrality top 10 nodes
-edt <- get_model_data(filter_features, eigen_centrality, top_k = 1)
-# eigen_tree <- tree_model_from_node(edt[[1]], edt[[2]], cols, cp_value=0.002)
+Construct a data for model to find the important feature
 
-####################### EDA betweenness and eigenvector centrality nodes
-cols_eda <- c(
-  '發生月份',
-  '車道劃分設施-分道設施-快車道或一般車道間名稱',
-  '車道劃分設施-分道設施-快慢車道間名稱',
-  '車道劃分設施-分道設施-路面邊線名稱',
-  '車道劃分設施-分向設施大類別名稱',
-  '事故類型及型態大類別名稱',
-  '道路型態大類別名稱',
-  '號誌-號誌種類名稱',
-  '速限-第1當事者',
-  "當事者事故發生時年齡",
-  "cause_group",
-  "mrt_100m_count",
-  "youbike_100m_count",
-  "parkinglot_100m_count"
-)
-
+```{r}
 cols_to_remove <- c(
   "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(無標記)",
   "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(附標記)",
@@ -234,7 +216,7 @@ eigen_only <- anti_join(top_eigen, top_betweenness)
 dim(betweenness_only)[1] + dim(common_nodes)[1] == dim(top_betweenness)[1] &
   dim(eigen_only)[1] + dim(common_nodes)[1] == dim(top_eigen)[1]
 
-source('./utils/model.R')
+source('../utils/model.R')
 
 ###########
 top_betweenness$type <- 1
@@ -248,8 +230,9 @@ fdt <- bind_rows(
   top_betweenness %>% sample_n(target_size),
   top_eigen %>% sample_n(target_size)
 )%>%select(-bn_feature, -grid_filter, -hotspot, -all_of(cols_to_remove))
+```
 
-
+```{r}
 result <- glm_report(fdt)
 
 result$importance_df%>%
@@ -269,3 +252,4 @@ result$importance_df%>%
   scale_color_manual(values = c("Betweenness" = "#E41A1C", "Eigen" = "#377EB8")) +
   theme_minimal(base_family = "PingFang TC")+
   labs(x="Odds Ratio", y="Variables")
+```
