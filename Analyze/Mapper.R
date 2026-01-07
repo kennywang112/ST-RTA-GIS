@@ -43,6 +43,31 @@ all_features <- all_features%>%
     )
   )
 
+all_features <- all_features%>%
+  mutate(
+    no_lane = ifelse(
+      (
+        (
+          (`車道劃分設施-分道設施-路面邊線名稱_無` > 0)
+        ) &
+          (
+            (`車道劃分設施-分向設施大類別名稱_無` > 0)
+          ) &
+          (
+            (`車道劃分設施-分道設施-快車道或一般車道間名稱_未繪設車道線` > 0)
+          ) &
+          (
+            (`車道劃分設施-分道設施-快慢車道間名稱_未繪設快慢車道分隔線` > 0)
+          ) &
+          (
+            (`號誌-號誌種類名稱_無號誌` > 0)
+          )
+      ),
+      1,
+      0
+    )
+  )
+
 all_features$bn_feature%>%table()
 # normalize
 n_data <- as.data.frame(scale(filter_data))

@@ -6,7 +6,9 @@ library(rpart.plot)
 # library(dplyr)
 # library(stringr)
 
-get_model_data <- function(features, sort_metric, top_k = 30) {
+get_model_data <- function(
+    features, sort_metric, top_k = 30
+    ) {
 
   top_features <- features%>%arrange(desc({{sort_metric}}))%>%head(top_k)
 
@@ -34,27 +36,62 @@ get_model_data <- function(features, sort_metric, top_k = 30) {
   return(list(top_combined, rest_of_combined))
 }
 
+get_model_grid <- function(
+    features, sort_metric, top_k = 30
+) {
+
+  top_features <- features%>%arrange(desc({{sort_metric}}))%>%head(top_k)
+
+  ## Get the unique indices from grid filter
+  unique_indices <- unique(unlist(top_features$points_in_vertex))
+
+  length(unlist(top_features$points_in_vertex))
+  ##.get original data indices from grid filter
+  top_grid_features <- all_features_grid[unique_indices,]
+  rest_of_features <- all_features_grid[-unique_indices,]
+  print(dim(top_grid_features)[1] + dim(rest_of_features)[1] == dim(all_features_grid)[1])
+
+  top_combined <- top_grid_features
+  rest_of_combined <- rest_of_features
+
+  return(list(top_combined, rest_of_combined))
+}
+
 model_from_node <- function(
-    top_combined, rest_of_combined, target_cols = NULL
+    betweenness_only, eigen_only, target_cols = NULL
     ) {
 
-  top_combined$type <- 1
-  rest_of_combined$type <- 0
-
-  if (is.null(target_cols)) {
-    top_data <- top_combined
-    rest_data <- rest_of_combined
-  } else {
-    top_data <- top_combined %>% select(all_of(target_cols), type)
-    rest_data <- rest_of_combined %>% select(all_of(target_cols), type)
-  }
-
-  n_top <- nrow(top_data)
   set.seed(123)
-  rest_data_balanced <- rest_data %>% sample_n(size = n_top)
-  message(paste0("Balanced: ", n_top, " samples."))
 
-  train_data <- na.omit(rbind(top_data, rest_data_balanced))
+  betweenness_only$type <- 1
+  eigen_only$type <- 0
+
+  n_between <- nrow(betweenness_only)
+  n_eigen <- nrow(eigen_only)
+  target_size <- min(n_between, n_eigen)
+
+  balanced_data <- bind_rows(
+    betweenness_only %>% sample_n(target_size),
+    eigen_only %>% sample_n(target_size)
+  )
+
+  fdt_filled <- balanced_data %>%
+    mutate(across(where(is.character), ~replace_na(., "空值")),
+           across(
+             .cols = where(is.numeric),
+             .fns  = ~ replace_na(., mean(., na.rm = TRUE))
+           ))
+  write.csv(fdt_filled,"./fdt_filled.csv", row.names = FALSE)
+
+  train_data <- fdt_filled %>% select(all_of(target_cols), type)
+
+  names(train_data) <- make.names(names(train_data))
+  train_data <- train_data %>%
+    mutate(across(where(is.character), ~replace_na(., "空值")),
+           across(
+             .cols = where(is.numeric),
+             .fns  = ~ replace_na(., mean(., na.rm = TRUE))
+           ))
 
   model <- glm(type ~ ., data = train_data, family = binomial)
   model_summary <- summary(model)
@@ -65,7 +102,6 @@ model_from_node <- function(
   cm <- confusionMatrix(factor(predicted_classes, levels = c(0, 1)),
                         factor(train_data$type, levels = c(0, 1)))
   acc_value <- cm$overall['Accuracy']
-
   # This is to get odds ratio and confidence interval
   # exp(cbind(OR = coef(model), confint(model)))
 
@@ -76,9 +112,9 @@ model_from_node <- function(
   )
 
   coefs <- coef(model)
-  match_idx <- match(rownames(imp_df), names(coefs))
+  match_idx <- match(imp_df$Variable, names(coefs))
   imp_df$Coefficient <- coefs[match_idx]
-  imp_df$Direction <- ifelse(imp_df$Coefficient > 0, "Positive", "Negative")
+  imp_df$Direction <- ifelse(imp_df$Coefficient > 0, "Betweenness", "Eigen")
   imp_df <- imp_df[order(imp_df$Importance, decreasing = FALSE), ]
   imp_df$Variable <- factor(imp_df$Variable, levels = imp_df$Variable)
 
@@ -88,9 +124,7 @@ model_from_node <- function(
   return(list(
     importance_df = imp_df,
     accuracy = acc_value,
-    confusion_matrix = cm,
-    top_group = top_combined,
-    rest_group = rest_of_combined
+    confusion_matrix = cm
   ))
 }
 
