@@ -6,7 +6,12 @@ editor: visual
 
 ```{r}
 getwd()
-source('./utils/model.R')
+source('../utils/model.R')
+source('../../TDA-R/MapperAlgo/R/Plotter.R')
+source('../../TDA-R/MapperAlgo/R/MapperCorrelation.R')
+
+grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
+combined_data <- read_csv("../../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
 ```
 
 ## Social Network Analysis
@@ -40,7 +45,9 @@ top_10_eigen_indices <- head(order(e_scores, decreasing = TRUE), 10)
 e_labels[top_10_eigen_indices] <- 1
 ```
 
-This is for adding weighting for eigen centrality edges
+## Weighted color lebeling
+
+This is for adding weighting for eigen centrality & betweenness
 
 ```{r}
 
@@ -82,14 +89,10 @@ e_scores_weighted <- e_result_weighted$vector
 ## Mapper algorithm plot
 
 ```{r}
-
-source('../../TDA-R/MapperAlgo/R/Plotter.R')
 MapperPlotter(
   Mapper,
-  label = e_scores,
-  # label = e_labels,
-  # label = b_labels,
-  # label = b_scores,
+  # label = e_scores,
+  label = b_scores,
   original_data = filter_data,
   use_embedding=TRUE
 )
@@ -103,36 +106,10 @@ MapperPlotter(
 )
 ```
 
-Save plot
-
-```{r}
-library(jsonlite)
-export_data <- list(
-  adjacency = Mapper$adjacency,
-  num_vertices = Mapper$num_vertices,
-  level_of_vertex = Mapper$level_of_vertex,
-  points_in_vertex = Mapper$points_in_vertex,
-  original_data = as.data.frame(all_features),
-  # this is the label that already calculated for each node
-  cc = tibble(
-    eigen_centrality = e_scores,
-    betweenness = b_scores,
-    weighted_betweenness = b_scores_weighted,
-    weighted_eigen_centrality = e_scores_weighted,
-    eigen_top10 = e_labels,
-    betweenness_top10 = b_labels,
-    threshold_hotspot = features$hotspott
-  )
-)
-write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
-
-```
-
 Get node features
 
 ```{r}
 
-source('../../TDA-R/MapperAlgo/R/MapperCorrelation.R')
 MapperCorrelation(Mapper, original_data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot), use_embedding = list(FALSE, FALSE))
 
 length(g)
@@ -146,9 +123,6 @@ features <- tibble(
   points_in_vertex = Mapper$points_in_vertex # original data indices in each vertex
 )
 
-# all_features <- read_csv("../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
-grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
-combined_data <- read_csv("../../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
 all_features_grid <- cbind(all_features, grid_filter)
 
 node_hotspot_values <- vapply(Mapper$points_in_vertex, function(idx) {
@@ -174,9 +148,35 @@ filter_features <- features%>%
   filter(!map_lgl(neighbor_points, is.null))
 ```
 
+Save plot
+
+```{r}
+library(jsonlite)
+export_data <- list(
+  adjacency = Mapper$adjacency,
+  num_vertices = Mapper$num_vertices,
+  level_of_vertex = Mapper$level_of_vertex,
+  points_in_vertex = Mapper$points_in_vertex,
+  original_data = as.data.frame(all_features),
+  # this is the label that already calculated for each node
+  cc = tibble(
+    eigen_centrality = e_scores,
+    betweenness = b_scores,
+    weighted_betweenness = b_scores_weighted,
+    weighted_eigen_centrality = e_scores_weighted,
+    eigen_top10 = e_labels,
+    betweenness_top10 = b_labels,
+    threshold_hotspot = features$hotspot
+  )
+)
+write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
+```
+
 correlation plot
 
 ```{r}
+#| message: false
+#| warning: false
 library(GGally)
 ggpairs(filter_features,
         columns = c("size", "eigen_centrality", "betweenness",
@@ -252,4 +252,164 @@ result$importance_df%>%
   scale_color_manual(values = c("Betweenness" = "#E41A1C", "Eigen" = "#377EB8")) +
   theme_minimal(base_family = "PingFang TC")+
   labs(x="Odds Ratio", y="Variables")
+```
+
+```{r}
+
+node_hotspot_values <- vapply(Mapper$points_in_vertex, function(idx) {
+  mean(all_features$hotspot[idx], na.rm = TRUE)
+}, numeric(1))
+features$hotspot <- node_hotspot_values
+features <- features%>%
+  mutate(hotspott = ifelse(hotspot > 0.2, 1, 0))
+
+MapperPlotter(
+  Mapper,
+  # label = e_scores,
+  label = features$hotspott,
+  # label = b_labels,
+  # label = b_scores,
+  original_data = filter_data,
+  use_embedding=TRUE
+)
+```
+
+```{r}
+MapperPlotter(
+  Mapper,
+  # label = e_scores,
+  # label = e_labels,
+  # label = b_labels,
+  label = b_scores,
+  original_data = filter_data,
+  use_embedding=TRUE
+)
+```
+
+```{r}
+
+features <- features%>%
+  mutate(target_group = ifelse(min_rank(desc(betweenness)) <= 10 & hotspott == 1, 1, 0))
+
+MapperPlotter(
+  Mapper,
+  # label = e_scores,
+  label = features$target_group,
+  # label = b_labels,
+  # label = b_scores,
+  original_data = filter_data,
+  use_embedding=TRUE
+)
+```
+
+```{r}
+hotspot_threshold <- 0.5
+
+df <- features %>% mutate(is_hotspot = hotspot > hotspot_threshold)
+MapperPlotter(
+  Mapper,
+  label = df$is_hotspot,
+  original_data = filter_data,
+  use_embedding=TRUE
+)
+
+
+df <- df %>%
+  # check if there's hot or safe neighbor first
+  mutate(
+    neighbor_hotspot_ratio = map_dbl(neighbors, function(idx) {
+      if(length(idx) == 0) return(0)
+      mean(df$is_hotspot[idx])}),
+    has_safe_neighbor = neighbor_hotspot_ratio < 1,
+    has_hot_neighbor = neighbor_hotspot_ratio > 0)%>%
+  # check if itself is hot or safe & the neighbor_hotspot_ratio
+  # set high betweenness threshold
+  mutate(
+    node_category = case_when(
+      is_hotspot == TRUE & has_safe_neighbor == TRUE ~ "Hot_with_Safe_Neighbors",
+      is_hotspot == FALSE & has_hot_neighbor == TRUE ~ "Cold_with_Hot_Neighbors",
+      TRUE ~ "Others"
+    ),
+    is_high_betweenness = betweenness >= quantile(df$betweenness, 0.9)
+    )%>% 
+  # finally find the interesting point
+  mutate(
+    final_category = case_when(
+      is_hotspot == TRUE & has_safe_neighbor == TRUE & is_high_betweenness == TRUE ~ "Hot_with_Safe_Neighbors_highbetweenness",
+      is_hotspot == FALSE & has_hot_neighbor == TRUE & is_high_betweenness == TRUE ~ "Cold_with_Hot_Neighbors_highbetweenness",
+       TRUE ~ "Others"
+    )
+  )
+
+table(df$final_category)
+```
+
+```{r}
+MapperPlotter(
+  Mapper,
+  label = df$final_category,
+  original_data = filter_data,
+  use_embedding=TRUE
+)
+```
+
+```{r}
+
+all_features <- read_csv("../../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
+
+get_comparison_data <- function(labeled_features, raw_grid_data) {
+  
+  green_nodes <- labeled_features %>%
+    filter(final_category == "Hot_with_Safe_Neighbors_highbetweenness")
+  green_indices <- unique(unlist(green_nodes$points_in_vertex))
+  green_grid_data <- raw_grid_data[green_indices, ] %>%
+    mutate(group_label = "Broken_Bridge")
+  
+  orange_nodes <- labeled_features %>%
+    filter(final_category == "Cold_with_Hot_Neighbors_highbetweenness")
+  orange_indices <- unique(unlist(orange_nodes$points_in_vertex))
+  orange_grid_data <- raw_grid_data[orange_indices, ] %>%
+    mutate(group_label = "Resilient_Bridge")
+  
+  comparison_data <- bind_rows(green_grid_data, orange_grid_data)
+  
+  return(comparison_data)
+}
+
+result_data <- get_comparison_data(df, all_features)
+
+result_data%>%
+  group_by(group_label)%>%
+  summarize(n())
+```
+
+```{r}
+#| message: false
+#| warning: false
+library(rpart)
+library(rpart.plot)
+
+analysis_data <- result_data%>%select(-hotspot)
+tree_model <- rpart(group_label ~ . , data = analysis_data, method = "class")
+
+rpart.plot(tree_model)
+
+
+library(showtext)
+
+showtext_auto()
+
+rpart.plot(tree_model, family = "PingFang")
+```
+
+```{r}
+
+library(caret)
+
+pred_class <- predict(tree_model, newdata = analysis_data, type = "class")
+
+conf_matrix <- confusionMatrix(data = pred_class, 
+                               reference = as.factor(analysis_data$group_label))
+
+print(conf_matrix)
 ```

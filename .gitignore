@@ -1,9 +1,10 @@
 Data
 CalculatedData
-.Rgistory
+.Rhistory
 .Rproj.user
 .RData
 QGIS
 Layouts/*
 .RDataTmp
 .RDataTmp1
+.DS_Store

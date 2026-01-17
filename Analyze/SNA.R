@@ -269,3 +269,6 @@ result$importance_df%>%
   scale_color_manual(values = c("Betweenness" = "#E41A1C", "Eigen" = "#377EB8")) +
   theme_minimal(base_family = "PingFang TC")+
   labs(x="Odds Ratio", y="Variables")
+
+
+rpart.plot(tree_model, family = "PingFang", tweak = 1.5)

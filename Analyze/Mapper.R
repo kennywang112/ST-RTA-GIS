@@ -191,10 +191,6 @@ all_features <- all_features %>%
     chr_feature2 = str_remove(max_feature_name, paste(feature, "_", sep=""))
   )
 # This is to concat multiple features
-all_features <- all_features %>%
-  mutate(
-    merged_feature = paste(chr_feature, chr_feature2, sep = "_")
-  )
 
 urban <- CPEmbedding(Mapper, all_features,
                      columns = list("hotspot", "bn_feature"),

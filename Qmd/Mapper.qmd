@@ -176,6 +176,7 @@ time_taken <- system.time({
 ```
 
 ```{r}
+#| warning: false
 length(Mapper$points_in_level_set)
 unique_indexes <- unique(unlist(Mapper$points_in_vertex))
 unique_indexes%>%length()
@@ -198,7 +199,7 @@ time_taken
 ```{r}
 # uniq_idx <- sort(unique(unlist(Mapper$points_in_vertex, use.names = FALSE)))
 # length(uniq_idx)
-source('../TDA-R/MapperAlgo/R/CPEmbedding.R')
+source('../../TDA-R/MapperAlgo/R/CPEmbedding.R')
 # This is to get the most feature in the node
 fc <- c()
 feature <- 'cause-group'
@@ -212,11 +213,6 @@ all_features <- all_features %>%
     max_feature_name = fc[max.col(select(., all_of(fc)), ties.method = "first")],
 
     chr_feature2 = str_remove(max_feature_name, paste(feature, "_", sep=""))
-  )
-# This is to concat multiple features
-all_features <- all_features %>%
-  mutate(
-    merged_feature = paste(chr_feature, chr_feature2, sep = "_")
   )
 
 urban <- CPEmbedding(Mapper, all_features,
