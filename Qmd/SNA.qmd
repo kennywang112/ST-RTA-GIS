@@ -5,13 +5,11 @@ editor: visual
 ---
 
 ```{r}
-getwd()
-source('../utils/model.R')
-source('../../TDA-R/MapperAlgo/R/Plotter.R')
-source('../../TDA-R/MapperAlgo/R/MapperCorrelation.R')
+#| message: false
+#| warning: false
 
-grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
-combined_data <- read_csv("../../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
+source('../AnalyzeV2/MapperforSNA.R')
+set.seed(123)
 ```
 
 ## Social Network Analysis
@@ -110,7 +108,7 @@ Get node features
 
 ```{r}
 
-MapperCorrelation(Mapper, original_data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot), use_embedding = list(FALSE, FALSE))
+# MapperCorrelation(Mapper, original_data = filter_data, labels = list(all_features$bn_feature, all_features$hotspot), use_embedding = list(FALSE, FALSE))
 
 length(g)
 length(e_scores)
@@ -169,7 +167,7 @@ export_data <- list(
     threshold_hotspot = features$hotspot
   )
 )
-write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
+write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/ST-RTA-GIS/CalculatedData/Mapper/mapper_graph.json")
 ```
 
 correlation plot
@@ -263,6 +261,9 @@ features$hotspot <- node_hotspot_values
 features <- features%>%
   mutate(hotspott = ifelse(hotspot > 0.2, 1, 0))
 
+features <- features%>%
+  mutate(target_group = ifelse(min_rank(desc(betweenness)) <= 10 & hotspott == 1, 1, 0))
+
 MapperPlotter(
   Mapper,
   # label = e_scores,
@@ -275,45 +276,8 @@ MapperPlotter(
 ```
 
 ```{r}
-MapperPlotter(
-  Mapper,
-  # label = e_scores,
-  # label = e_labels,
-  # label = b_labels,
-  label = b_scores,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
-```
-
-```{r}
-
-features <- features%>%
-  mutate(target_group = ifelse(min_rank(desc(betweenness)) <= 10 & hotspott == 1, 1, 0))
-
-MapperPlotter(
-  Mapper,
-  # label = e_scores,
-  label = features$target_group,
-  # label = b_labels,
-  # label = b_scores,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
-```
-
-```{r}
 hotspot_threshold <- 0.5
-
 df <- features %>% mutate(is_hotspot = hotspot > hotspot_threshold)
-MapperPlotter(
-  Mapper,
-  label = df$is_hotspot,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
-
-
 df <- df %>%
   # check if there's hot or safe neighbor first
   mutate(
@@ -353,31 +317,40 @@ MapperPlotter(
 )
 ```
 
+## This is to classify using grid-based data (all_features.csv)
+
 ```{r}
+library(sf)
+roads <- st_read(dsn="../CalculatedData/pairs_annot_all_cities.shp")
+# grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")
+grid_gi <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_giV1.csv")%>%
+  filter(num_accidents>0)%>%
+  mutate(index = row_number())
 
-all_features <- read_csv("../../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
+grid_sf <- st_as_sf(grid_gi, wkt = "geometry", crs = 3826)
+roads <- st_transform(roads, 3826)
+joined_data <- st_join(grid_sf, roads, join = st_intersects, left = TRUE)
 
-get_comparison_data <- function(labeled_features, raw_grid_data) {
-  
-  green_nodes <- labeled_features %>%
-    filter(final_category == "Hot_with_Safe_Neighbors_highbetweenness")
-  green_indices <- unique(unlist(green_nodes$points_in_vertex))
-  green_grid_data <- raw_grid_data[green_indices, ] %>%
-    mutate(group_label = "Broken_Bridge")
-  
-  orange_nodes <- labeled_features %>%
-    filter(final_category == "Cold_with_Hot_Neighbors_highbetweenness")
-  orange_indices <- unique(unlist(orange_nodes$points_in_vertex))
-  orange_grid_data <- raw_grid_data[orange_indices, ] %>%
-    mutate(group_label = "Resilient_Bridge")
-  
-  comparison_data <- bind_rows(green_grid_data, orange_grid_data)
-  
-  return(comparison_data)
-}
+result <- joined_data %>%
+  group_by(index) %>%
+  summarise(
+    max_spd_dlt = max(spd_dlt, na.rm = TRUE),
+    road_count = n(),
+    num_accidents = first(num_accidents),
+    .groups = "drop"
+  ) %>%
+  mutate(max_spd_dlt = ifelse(is.infinite(max_spd_dlt), 0, max_spd_dlt))
 
-result_data <- get_comparison_data(df, all_features)
+```
 
+![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAaCAYAAADFTB7LAAAAcElEQVR4Xu3OwQmAQAxE0bClWYCW5N06tM6V2YPg5CjoF/JhLoHAi6iqn9eOefUbqrYvHY0cQDLyAlKRNyARmYA0ZMLRkAlGQyaU72tkAtlim7r/vJqDUDjlKBROOQyFU2icQuMUGqfQuBEaV1XPOwEx96nYACK8+wAAAABJRU5ErkJggg== "Run Current Chunk")
+
+```{r}
+source('../utils/model.R')
+
+final_all_features <- cbind(all_features)#, result$max_spd_dlt)
+
+result_data <- get_comparison_data(df, final_all_features)
 result_data%>%
   group_by(group_label)%>%
   summarize(n())
@@ -389,16 +362,36 @@ result_data%>%
 library(rpart)
 library(rpart.plot)
 
-analysis_data <- result_data%>%select(-hotspot)
+cols_to_remove <- c(
+  # "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(無標記)",
+  # "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(附標記)",
+  # "車道劃分設施-分道設施-快車道或一般車道間名稱_禁止變換車道線(無標記)",
+  # "車道劃分設施-分道設施-快車道或一般車道間名稱_禁止變換車道線(附標記)",
+  # "車道劃分設施-分道設施-快慢車道間名稱_寬式快慢車道分隔島(50公分以上)",
+  # "車道劃分設施-分道設施-快慢車道間名稱_快慢車道分隔線",
+  # "車道劃分設施-分道設施-快慢車道間名稱_窄式快慢車道分隔島(無柵欄)",
+  # "車道劃分設施-分道設施-快慢車道間名稱_窄式快慢車道分隔島(附柵欄)",
+  "車道劃分設施-分道設施-路面邊線名稱_有"
+  # "車道劃分設施-分向設施大類別名稱_行車分向線",
+  # "車道劃分設施-分向設施大類別名稱_雙向禁止超車線",
+  # "車道劃分設施-分向設施大類別名稱_單向禁止超車線",
+  # "車道劃分設施-分向設施大類別名稱_中央分向島"
+)
+
+analysis_data <- result_data%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
 tree_model <- rpart(group_label ~ . , data = analysis_data, method = "class")
 
-rpart.plot(tree_model)
-
-
 library(showtext)
-
 showtext_auto()
 
+png("../Layouts/tree_model.png", width = 1200, height = 600)
+rpart.plot(tree_model, family = "PingFang", tweak = 1.2)
+dev.off()
+```
+
+```{r}
+#| message: false
+#| warning: false
 rpart.plot(tree_model, family = "PingFang")
 ```
 
@@ -412,4 +405,57 @@ conf_matrix <- confusionMatrix(data = pred_class,
                                reference = as.factor(analysis_data$group_label))
 
 print(conf_matrix)
+```
+
+## Find neighbor
+
+```{r}
+
+get_neighbor_features <- function(labeled_features, all_features_grid) {
+  
+  extract_neighbors <- function(target_category, label_name) {
+
+    target_nodes <- labeled_features %>%
+      filter(final_category == target_category)
+
+    if (nrow(target_nodes) == 0) {
+      warning(paste("沒有類別為", target_category, "的節點"))
+      return(NULL)
+    }
+    neighbor_indices <- unique(unlist(target_nodes$neighbors))
+    
+    if (length(neighbor_indices) == 0) {
+      warning(paste("類別", target_category, "沒有鄰居"))
+      return(NULL)
+    }
+  
+    neighbor_data <- all_features_grid[neighbor_indices, ] %>%
+      mutate(
+        parent_group = label_name,
+        role = "Neighbor"
+      )
+    
+    return(neighbor_data)
+  }
+
+  green_neighbors <- extract_neighbors(
+    "Hot_with_Safe_Neighbors_highbetweenness", 
+    "Broken_Neighbors"
+  )
+
+  orange_neighbors <- extract_neighbors(
+    "Cold_with_Hot_Neighbors_highbetweenness", 
+    "Resilient_Neighbors"
+  )
+  
+  comparison_neighbors <- bind_rows(green_neighbors, orange_neighbors)
+  
+  return(comparison_neighbors)
+}
+
+neighbor_result <- get_neighbor_features(df, final_all_features)
+```
+
+```{r}
+neighbor_result
 ```

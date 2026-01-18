@@ -100,7 +100,7 @@ export_data <- list(
   )
 )
 
-write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/my_mapper_graph.json")
+write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/ST-RTA-GIS/CalculatedData/Mapper/mapper_graph.json")
 
 #######################
 
@@ -270,5 +270,3 @@ result$importance_df%>%
   theme_minimal(base_family = "PingFang TC")+
   labs(x="Odds Ratio", y="Variables")
 
-
-rpart.plot(tree_model, family = "PingFang", tweak = 1.5)

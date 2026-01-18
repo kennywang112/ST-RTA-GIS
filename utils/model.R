@@ -6,6 +6,7 @@ library(rpart.plot)
 # library(dplyr)
 # library(stringr)
 
+# this is the combined data from all nodes
 get_model_data <- function(
     features, sort_metric, top_k = 30
     ) {
@@ -47,6 +48,7 @@ get_hotspot_data <- function(
   return(list(hotspot_grid_data, non_hotspot_grid_data))
 }
 
+# this is to get the grid data from all nodes
 get_model_grid <- function(
     features, sort_metric, top_k = 30
     ) {
@@ -178,3 +180,74 @@ tree_model_from_node <- function(
 
   return(list(model = tree_model, importance_df = imp_df,  data = tree_data))
 }
+
+
+
+# This is used in SNA.qmd to get the grid data
+get_comparison_data <- function(labeled_features, raw_grid_data) {
+
+  green_nodes <- labeled_features %>%
+    filter(final_category == "Hot_with_Safe_Neighbors_highbetweenness")
+  green_indices <- unique(unlist(green_nodes$points_in_vertex))
+
+  orange_nodes <- labeled_features %>%
+    filter(final_category == "Cold_with_Hot_Neighbors_highbetweenness")
+  orange_indices <- unique(unlist(orange_nodes$points_in_vertex))
+
+  common_indices <- intersect(green_indices, orange_indices)
+  if (length(common_indices) > 0) {
+    message(sprintf("偵測到 %d 筆重疊資料點同時屬於 Broken 和 Resilient", length(common_indices)))
+  } else {
+    message("組資料完全獨立無重疊")
+  }
+
+  green_indices_clean <- setdiff(green_indices, common_indices)
+  orange_indices_clean <- setdiff(orange_indices, common_indices)
+
+  green_grid_data <- raw_grid_data[green_indices_clean, ] %>%
+    mutate(group_label = "Broken_Bridge")
+
+  orange_grid_data <- raw_grid_data[orange_indices_clean, ] %>%
+    mutate(group_label = "Resilient_Bridge")
+
+  comparison_data <- bind_rows(green_grid_data, orange_grid_data)
+
+  return(comparison_data)
+}
+
+
+# This is used in SNA.qmd to get the original combined data but now it's not in use
+get_comparison_combined <- function(labeled_features, all_features_grid, combined_data) {
+
+  extract_raw_group <- function(target_category, label_name) {
+
+    target_nodes <- labeled_features %>%
+      filter(final_category == target_category)
+    grid_indices <- unique(unlist(target_nodes$points_in_vertex))
+
+    if (length(grid_indices) == 0) return(NULL)
+
+    target_grid_features <- all_features_grid[grid_indices, ]
+    parsed_list <- lapply(target_grid_features$grid_filter, fromJSON)
+    raw_data_indices <- unique(unlist(parsed_list))
+    raw_data <- combined_data[raw_data_indices, ] %>%
+      mutate(group_label = label_name)
+
+    return(raw_data)
+  }
+
+  green_raw_combined <- extract_raw_group(
+    "Hot_with_Safe_Neighbors_highbetweenness",
+    "Broken_Bridge"
+  )
+  orange_raw_combined <- extract_raw_group(
+    "Cold_with_Hot_Neighbors_highbetweenness",
+    "Resilient_Bridge"
+  )
+
+  comparison_data <- bind_rows(green_raw_combined, orange_raw_combined)
+
+  return(comparison_data)
+}
+
+# final_raw_data <- get_comparison_combined(df, all_features_grid, combined_data)

@@ -95,3 +95,4 @@ write_sf(
   "./CalculatedData/pairs_annot_all_cities.shp",
   layer_options = "ENCODING=UTF-8"
 )
+

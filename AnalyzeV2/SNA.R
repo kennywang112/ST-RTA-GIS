@@ -28,3 +28,6 @@ ggplot(cc, aes(x = betweenness, y = threshold_hotspot)) +
   geom_vline(xintercept = upper_bound_x, linetype = "dashed")
 
 hotspot_and_high_between <- cc%>%filter(betweenness > upper_bound_x, threshold_hotspot > 0.5)
+
+
+rpart.plot(tree_model, family = "PingFang")
