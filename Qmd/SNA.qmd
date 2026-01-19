@@ -409,53 +409,141 @@ print(conf_matrix)
 
 ## Find neighbor
 
+-   直接去對A情況做自己和鄰居的決策樹，找出哪一步錯了
+
+-   直接去對B情況做自己和鄰居的決策樹，找出哪一步是對的
+
 ```{r}
+library(dplyr)
+library(tidyr)
 
-get_neighbor_features <- function(labeled_features, all_features_grid) {
+get_four_categories_data <- function(labeled_features, all_features_grid) {
+
+  process_group <- function(self_category_name, neighbor_category_name) {
   
-  extract_neighbors <- function(target_category, label_name) {
-
-    target_nodes <- labeled_features %>%
-      filter(final_category == target_category)
-
-    if (nrow(target_nodes) == 0) {
-      warning(paste("沒有類別為", target_category, "的節點"))
+    # 先找出目標節點
+    self_nodes <- labeled_features %>% filter(final_category == self_category_name)
+    
+    if (nrow(self_nodes) == 0) return(NULL)
+    
+    self_node_indices <- which(labeled_features$final_category == self_category_name)
+    
+    # 除掉自己是熱點同時鄰居是熱點的"節點"
+    valid_neighbor_node_indices <- unique(unlist(lapply(self_nodes$neighbors, function(nbs) {
+      if (length(nbs) == 0) return(NULL)
+      setdiff(nbs, self_node_indices)
+    })))
+    
+    if (length(valid_neighbor_node_indices) == 0) {
+      warning(paste(self_category_name, "沒有符合標準的鄰居"))
       return(NULL)
     }
-    neighbor_indices <- unique(unlist(target_nodes$neighbors))
+
+    grid_indices_self <- unique(unlist(labeled_features$points_in_vertex[self_node_indices]))
+    grid_indices_neighbor <- unique(unlist(labeled_features$points_in_vertex[valid_neighbor_node_indices]))
     
-    if (length(neighbor_indices) == 0) {
-      warning(paste("類別", target_category, "沒有鄰居"))
-      return(NULL)
-    }
+    ambiguous_grids <- intersect(grid_indices_self, grid_indices_neighbor)
+
+    clean_self_grids <- setdiff(grid_indices_self, ambiguous_grids)
+    clean_neighbor_grids <- setdiff(grid_indices_neighbor, ambiguous_grids)
   
-    neighbor_data <- all_features_grid[neighbor_indices, ] %>%
-      mutate(
-        parent_group = label_name,
-        role = "Neighbor"
-      )
+    df_self <- all_features_grid[clean_self_grids, ] %>%
+      mutate(Group_Label = self_category_name)
     
-    return(neighbor_data)
+    df_neighbor <- all_features_grid[clean_neighbor_grids, ] %>%
+      mutate(Group_Label = neighbor_category_name)
+    
+    return(bind_rows(df_self, df_neighbor))
   }
-
-  green_neighbors <- extract_neighbors(
-    "Hot_with_Safe_Neighbors_highbetweenness", 
+  
+  data_group_a <- process_group(
+    "Hot_with_Safe_Neighbors_highbetweenness",
     "Broken_Neighbors"
   )
-
-  orange_neighbors <- extract_neighbors(
-    "Cold_with_Hot_Neighbors_highbetweenness", 
+  
+  data_group_b <- process_group(
+    "Cold_with_Hot_Neighbors_highbetweenness",
     "Resilient_Neighbors"
   )
+
+  final_dataset <- bind_rows(data_group_a, data_group_b)
   
-  comparison_neighbors <- bind_rows(green_neighbors, orange_neighbors)
-  
-  return(comparison_neighbors)
+  return(final_dataset)
 }
 
-neighbor_result <- get_neighbor_features(df, final_all_features)
+final_data_for_tree <- get_four_categories_data(df, final_all_features)
 ```
 
 ```{r}
-neighbor_result
+do_undersampling <- function(df, group1_name, group2_name) {
+
+  data_g1 <- df %>% filter(Group_Label == group1_name)
+  data_g2 <- df %>% filter(Group_Label == group2_name)
+  n_g1 <- nrow(data_g1)
+  n_g2 <- nrow(data_g2)
+  cat(sprintf("原始數量 -> %s: %d, %s: %d\n", group1_name, n_g1, group2_name, n_g2))
+
+  target_n <- min(n_g1, n_g2)
+  set.seed(123)
+
+  data_g1_balanced <- data_g1 %>% sample_n(target_n)
+  data_g2_balanced <- data_g2 %>% sample_n(target_n)
+  balanced_df <- bind_rows(data_g1_balanced, data_g2_balanced)
+  cat(sprintf("平衡後數量 -> 各 %d 筆 (總共 %d 筆)\n", target_n, nrow(balanced_df)))
+  
+  return(balanced_df)
+}
+```
+
+```{r}
+
+cols_to_remove <- c(
+  "車道劃分設施-分道設施-路面邊線名稱_有"
+)
+
+final_data_for_tree <- final_data_for_tree%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
+
+bad_group_balanced <- do_undersampling(
+  final_data_for_tree, 
+  "Hot_with_Safe_Neighbors_highbetweenness", 
+  "Broken_Neighbors"
+)
+
+res_group_balanced <- do_undersampling(
+  final_data_for_tree, 
+  "Cold_with_Hot_Neighbors_highbetweenness", 
+  "Resilient_Neighbors"
+)
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+tree_model <- rpart(Group_Label ~ . , 
+                    data = bad_group_balanced, 
+                    method = "class",
+                    maxdepth = 10,
+                    control = rpart.control(cp = 0.001),
+                    parms = list(prior = c(0.5, 0.5)) 
+                    )
+pred_class <- predict(tree_model, newdata = bad_group, type = "class")
+conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(bad_group$Group_Label))
+
+rpart.plot(tree_model, family = "PingFang")
+print(conf_matrix)
+```
+
+```{r}
+tree_model <- rpart(Group_Label ~ . , 
+                    data = res_group_balanced, 
+                    method = "class",
+                    maxdepth = 10,
+                    control = rpart.control(cp = 0.001),
+                    parms = list(prior = c(0.5, 0.5)) 
+                    )
+pred_class <- predict(tree_model, newdata = res_group, type = "class")
+conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(res_group$Group_Label))
+
+print(conf_matrix)
 ```
