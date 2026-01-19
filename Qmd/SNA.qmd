@@ -65,12 +65,12 @@ edge_weights <- apply(edge_list, 1, function(x) calc_edge_weight(x[1], x[2]))
 
 b_scores_weighted <- betweenness(g, weights = edge_weights, normalized = TRUE)
 
-MapperPlotter(
-  Mapper,
-  label = b_scores_weighted,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
+# MapperPlotter(
+#   Mapper,
+#   label = b_scores_weighted,
+#   original_data = filter_data,
+#   use_embedding=TRUE
+# )
 
 calc_eigen_weight <- function(u, v) {
   size_u <- node_sizes[u]
@@ -319,6 +319,8 @@ MapperPlotter(
 
 ## This is to classify using grid-based data (all_features.csv)
 
+### This finds the maximum speed difference in grid
+
 ```{r}
 library(sf)
 roads <- st_read(dsn="../CalculatedData/pairs_annot_all_cities.shp")
@@ -414,39 +416,37 @@ print(conf_matrix)
 -   直接去對B情況做自己和鄰居的決策樹，找出哪一步是對的
 
 ```{r}
-library(dplyr)
-library(tidyr)
 
+# 找鄰居的時候有個限制：鄰居一定要和自己是相反的，熱點抓鄰居也是熱點的沒有意義
 get_four_categories_data <- function(labeled_features, all_features_grid) {
-
-  process_group <- function(self_category_name, neighbor_category_name) {
   
-    # 先找出目標節點
+  process_group <- function(
+    self_category_name, neighbor_category_name, neighbor_must_be_hot
+    ) {
+    
     self_nodes <- labeled_features %>% filter(final_category == self_category_name)
-    
-    if (nrow(self_nodes) == 0) return(NULL)
-    
     self_node_indices <- which(labeled_features$final_category == self_category_name)
     
-    # 除掉自己是熱點同時鄰居是熱點的"節點"
     valid_neighbor_node_indices <- unique(unlist(lapply(self_nodes$neighbors, function(nbs) {
-      if (length(nbs) == 0) return(NULL)
-      setdiff(nbs, self_node_indices)
+    
+      nbs_status <- labeled_features$is_hotspot[nbs]
+      # If neighbor_must_be_hot is TRUE，only save TRUE
+      # If neighbor_must_be_hot is FALSE，only save FALSE
+      real_nbs <- nbs[nbs_status == neighbor_must_be_hot]
+      # Remove self again to make sure
+      final_nbs <- setdiff(real_nbs, self_node_indices)
+      
+      return(final_nbs)
     })))
     
-    if (length(valid_neighbor_node_indices) == 0) {
-      warning(paste(self_category_name, "沒有符合標準的鄰居"))
-      return(NULL)
-    }
-
     grid_indices_self <- unique(unlist(labeled_features$points_in_vertex[self_node_indices]))
     grid_indices_neighbor <- unique(unlist(labeled_features$points_in_vertex[valid_neighbor_node_indices]))
     
     ambiguous_grids <- intersect(grid_indices_self, grid_indices_neighbor)
-
+    
     clean_self_grids <- setdiff(grid_indices_self, ambiguous_grids)
     clean_neighbor_grids <- setdiff(grid_indices_neighbor, ambiguous_grids)
-  
+    
     df_self <- all_features_grid[clean_self_grids, ] %>%
       mutate(Group_Label = self_category_name)
     
@@ -455,23 +455,35 @@ get_four_categories_data <- function(labeled_features, all_features_grid) {
     
     return(bind_rows(df_self, df_neighbor))
   }
-  
+
   data_group_a <- process_group(
-    "Hot_with_Safe_Neighbors_highbetweenness",
-    "Broken_Neighbors"
-  )
-  
-  data_group_b <- process_group(
-    "Cold_with_Hot_Neighbors_highbetweenness",
-    "Resilient_Neighbors"
+    self_category_name = "Hot_with_Safe_Neighbors_highbetweenness",
+    neighbor_category_name = "Broken_Neighbors",
+    neighbor_must_be_hot = FALSE
   )
 
+  data_group_b <- process_group(
+    self_category_name = "Cold_with_Hot_Neighbors_highbetweenness",
+    neighbor_category_name = "Resilient_Neighbors",
+    neighbor_must_be_hot = TRUE 
+  )
+  
   final_dataset <- bind_rows(data_group_a, data_group_b)
   
   return(final_dataset)
 }
 
 final_data_for_tree <- get_four_categories_data(df, final_all_features)
+```
+
+```{r}
+
+MapperPlotter(
+  Mapper,
+  label = df$is_hotspot,
+  original_data = filter_data,
+  use_embedding=TRUE
+)
 ```
 
 ```{r}
@@ -527,10 +539,10 @@ tree_model <- rpart(Group_Label ~ . ,
                     control = rpart.control(cp = 0.001),
                     parms = list(prior = c(0.5, 0.5)) 
                     )
-pred_class <- predict(tree_model, newdata = bad_group, type = "class")
-conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(bad_group$Group_Label))
+pred_class <- predict(tree_model, newdata = bad_group_balanced, type = "class")
+conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(bad_group_balanced$Group_Label))
 
-rpart.plot(tree_model, family = "PingFang")
+# rpart.plot(tree_model, family = "PingFang")
 print(conf_matrix)
 ```
 
@@ -542,8 +554,8 @@ tree_model <- rpart(Group_Label ~ . ,
                     control = rpart.control(cp = 0.001),
                     parms = list(prior = c(0.5, 0.5)) 
                     )
-pred_class <- predict(tree_model, newdata = res_group, type = "class")
-conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(res_group$Group_Label))
+pred_class <- predict(tree_model, newdata = res_group_balanced, type = "class")
+conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(res_group_balanced$Group_Label))
 
 print(conf_matrix)
 ```
