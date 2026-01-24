@@ -270,3 +270,4 @@ result$importance_df%>%
   theme_minimal(base_family = "PingFang TC")+
   labs(x="Odds Ratio", y="Variables")
 
+

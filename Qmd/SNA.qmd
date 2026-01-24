@@ -12,6 +12,13 @@ source('../AnalyzeV2/MapperforSNA.R')
 set.seed(123)
 ```
 
+```{r}
+
+source('../Analyze/utils.R')
+existing_cols <- intersect(names(all_features), names(col_translation))
+names(all_features)[match(existing_cols, names(all_features))] <- col_translation[existing_cols]
+```
+
 ## Social Network Analysis
 
 This is to get the eigen centrality and betweenness
@@ -21,7 +28,7 @@ adj_matrix <- Mapper$adjacency
 
 adj_list <- lapply(1:Mapper$num_vertices, function(i) {
   neighbors <- which(adj_matrix[i, ] > 0)
-  return(neighbors[neighbors != i]) # 移除自己
+  return(neighbors[neighbors != i])
 })
 # find total unique indices
 uniq_idx <- sort(unique(unlist(Mapper$points_in_vertex, use.names = FALSE)))
@@ -41,47 +48,6 @@ b_labels[top_10_indices] <- 1
 e_labels <- rep(0, length(e_scores))
 top_10_eigen_indices <- head(order(e_scores, decreasing = TRUE), 10)
 e_labels[top_10_eigen_indices] <- 1
-```
-
-## Weighted color lebeling
-
-This is for adding weighting for eigen centrality & betweenness
-
-```{r}
-
-node_sizes <- pmax(sapply(Mapper$points_in_vertex, length), 1)
-g <- graph_from_adjacency_matrix(Mapper$adjacency, mode = "undirected")
-
-calc_edge_weight <- function(u, v) {
-  size_u <- node_sizes[u]
-  size_v <- node_sizes[v]
-  # the weight is inversely proportional to the sum of node sizes
-  # because larger nodes should have less influence on betweenness
-  return(1 / (size_u + size_v))
-}
-
-edge_list <- as_edgelist(g, names = FALSE)
-edge_weights <- apply(edge_list, 1, function(x) calc_edge_weight(x[1], x[2]))
-
-b_scores_weighted <- betweenness(g, weights = edge_weights, normalized = TRUE)
-
-# MapperPlotter(
-#   Mapper,
-#   label = b_scores_weighted,
-#   original_data = filter_data,
-#   use_embedding=TRUE
-# )
-
-calc_eigen_weight <- function(u, v) {
-  size_u <- node_sizes[u]
-  size_v <- node_sizes[v]
-  return(size_u + size_v)
-}
-
-eigen_weights <- apply(edge_list, 1, function(x) calc_eigen_weight(x[1], x[2]))
-e_result_weighted <- eigen_centrality(g, weights = eigen_weights)
-e_scores_weighted <- e_result_weighted$vector
-
 ```
 
 ## Mapper algorithm plot
@@ -146,134 +112,7 @@ filter_features <- features%>%
   filter(!map_lgl(neighbor_points, is.null))
 ```
 
-Save plot
-
-```{r}
-library(jsonlite)
-export_data <- list(
-  adjacency = Mapper$adjacency,
-  num_vertices = Mapper$num_vertices,
-  level_of_vertex = Mapper$level_of_vertex,
-  points_in_vertex = Mapper$points_in_vertex,
-  original_data = as.data.frame(all_features),
-  # this is the label that already calculated for each node
-  cc = tibble(
-    eigen_centrality = e_scores,
-    betweenness = b_scores,
-    weighted_betweenness = b_scores_weighted,
-    weighted_eigen_centrality = e_scores_weighted,
-    eigen_top10 = e_labels,
-    betweenness_top10 = b_labels,
-    threshold_hotspot = features$hotspot
-  )
-)
-write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/ST-RTA-GIS/CalculatedData/Mapper/mapper_graph.json")
-```
-
-correlation plot
-
-```{r}
-#| message: false
-#| warning: false
-library(GGally)
-ggpairs(filter_features,
-        columns = c("size", "eigen_centrality", "betweenness",
-                    "neighbor_point_size", "neighbor_node_size", "hotspot"),
-        upper = list(continuous = wrap("cor", method = "spearman")))
-```
-
-# EDA
-
-Construct a data for model to find the important feature
-
-```{r}
-cols_to_remove <- c(
-  "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(無標記)",
-  "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(附標記)",
-  "車道劃分設施-分道設施-快車道或一般車道間名稱_禁止變換車道線(無標記)",
-  "車道劃分設施-分道設施-快車道或一般車道間名稱_禁止變換車道線(附標記)",
-  "車道劃分設施-分道設施-快慢車道間名稱_寬式快慢車道分隔島(50公分以上)",
-  "車道劃分設施-分道設施-快慢車道間名稱_快慢車道分隔線",
-  "車道劃分設施-分道設施-快慢車道間名稱_窄式快慢車道分隔島(無柵欄)",
-  "車道劃分設施-分道設施-快慢車道間名稱_窄式快慢車道分隔島(附柵欄)",
-  "車道劃分設施-分道設施-路面邊線名稱_有",
-  "車道劃分設施-分向設施大類別名稱_行車分向線",
-  "車道劃分設施-分向設施大類別名稱_雙向禁止超車線",
-  "車道劃分設施-分向設施大類別名稱_單向禁止超車線",
-  "車道劃分設施-分向設施大類別名稱_中央分向島"
-)
-
-bdt <- get_model_grid(filter_features, betweenness, top_k = 10)
-edt <- get_model_grid(filter_features, eigen_centrality, top_k = 10)
-
-top_betweenness <- bdt[[1]]
-top_eigen <- edt[[1]]
-common_nodes <- inner_join(top_betweenness, top_eigen)
-betweenness_only <- anti_join(top_betweenness, top_eigen)
-eigen_only <- anti_join(top_eigen, top_betweenness)
-dim(betweenness_only)[1] + dim(common_nodes)[1] == dim(top_betweenness)[1] &
-  dim(eigen_only)[1] + dim(common_nodes)[1] == dim(top_eigen)[1]
-
-source('../utils/model.R')
-
-###########
-top_betweenness$type <- 1
-top_eigen$type <- 0
-
-n_between <- nrow(betweenness_only)
-n_eigen <- nrow(eigen_only)
-target_size <- min(n_between, n_eigen)
-
-fdt <- bind_rows(
-  top_betweenness %>% sample_n(target_size),
-  top_eigen %>% sample_n(target_size)
-)%>%select(-bn_feature, -grid_filter, -hotspot, -all_of(cols_to_remove))
-```
-
-```{r}
-result <- glm_report(fdt)
-
-result$importance_df%>%
-  filter(Importance > 1.96)%>%
-  ggplot(aes(x = Importance, y = Variable, color = Direction)) +
-  geom_segment(aes(x = 0, xend = Importance, y = Variable, yend = Variable), linewidth = 1) +
-  geom_point(size = 4) +
-  scale_color_manual(values = c("Betweenness" = "#E41A1C", "Eigen" = "#377EB8")) +
-  theme_minimal(base_family = "PingFang TC")+
-  labs(x="Variable Importance", y="Variables")
-# odds ratio
-result$importance_df%>%
-  filter(Importance > 1.96)%>%
-  ggplot(aes(x = OddsRatio, y = Variable, color = Direction)) +
-  geom_segment(aes(x = 1, xend = OddsRatio, y = Variable, yend = Variable), linewidth = 1) +
-  geom_point(size = 4) +
-  scale_color_manual(values = c("Betweenness" = "#E41A1C", "Eigen" = "#377EB8")) +
-  theme_minimal(base_family = "PingFang TC")+
-  labs(x="Odds Ratio", y="Variables")
-```
-
-```{r}
-
-node_hotspot_values <- vapply(Mapper$points_in_vertex, function(idx) {
-  mean(all_features$hotspot[idx], na.rm = TRUE)
-}, numeric(1))
-features$hotspot <- node_hotspot_values
-features <- features%>%
-  mutate(hotspott = ifelse(hotspot > 0.2, 1, 0))
-
-features <- features%>%
-  mutate(target_group = ifelse(min_rank(desc(betweenness)) <= 10 & hotspott == 1, 1, 0))
-
-MapperPlotter(
-  Mapper,
-  # label = e_scores,
-  label = features$hotspott,
-  # label = b_labels,
-  # label = b_scores,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
-```
+# Model
 
 ```{r}
 hotspot_threshold <- 0.5
@@ -322,30 +161,28 @@ MapperPlotter(
 ### This finds the maximum speed difference in grid
 
 ```{r}
-library(sf)
-roads <- st_read(dsn="../CalculatedData/pairs_annot_all_cities.shp")
-# grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")
-grid_gi <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_giV1.csv")%>%
-  filter(num_accidents>0)%>%
-  mutate(index = row_number())
-
-grid_sf <- st_as_sf(grid_gi, wkt = "geometry", crs = 3826)
-roads <- st_transform(roads, 3826)
-joined_data <- st_join(grid_sf, roads, join = st_intersects, left = TRUE)
-
-result <- joined_data %>%
-  group_by(index) %>%
-  summarise(
-    max_spd_dlt = max(spd_dlt, na.rm = TRUE),
-    road_count = n(),
-    num_accidents = first(num_accidents),
-    .groups = "drop"
-  ) %>%
-  mutate(max_spd_dlt = ifelse(is.infinite(max_spd_dlt), 0, max_spd_dlt))
+# library(sf)
+# roads <- st_read(dsn="../CalculatedData/pairs_annot_all_cities.shp")
+# # grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")
+# grid_gi <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_giV1.csv")%>%
+#   filter(num_accidents>0)%>%
+#   mutate(index = row_number())
+# 
+# grid_sf <- st_as_sf(grid_gi, wkt = "geometry", crs = 3826)
+# roads <- st_transform(roads, 3826)
+# joined_data <- st_join(grid_sf, roads, join = st_intersects, left = TRUE)
+# 
+# result <- joined_data %>%
+#   group_by(index) %>%
+#   summarise(
+#     max_spd_dlt = max(spd_dlt, na.rm = TRUE),
+#     road_count = n(),
+#     num_accidents = first(num_accidents),
+#     .groups = "drop"
+#   ) %>%
+#   mutate(max_spd_dlt = ifelse(is.infinite(max_spd_dlt), 0, max_spd_dlt))
 
 ```
-
-![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAaCAYAAADFTB7LAAAAcElEQVR4Xu3OwQmAQAxE0bClWYCW5N06tM6V2YPg5CjoF/JhLoHAi6iqn9eOefUbqrYvHY0cQDLyAlKRNyARmYA0ZMLRkAlGQyaU72tkAtlim7r/vJqDUDjlKBROOQyFU2icQuMUGqfQuBEaV1XPOwEx96nYACK8+wAAAABJRU5ErkJggg== "Run Current Chunk")
 
 ```{r}
 source('../utils/model.R')
@@ -358,6 +195,8 @@ result_data%>%
   summarize(n())
 ```
 
+### This part is to model Broken_Bridge & Resilient_Bridge
+
 ```{r}
 #| message: false
 #| warning: false
@@ -365,19 +204,8 @@ library(rpart)
 library(rpart.plot)
 
 cols_to_remove <- c(
-  # "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(無標記)",
-  # "車道劃分設施-分道設施-快車道或一般車道間名稱_車道線(附標記)",
-  # "車道劃分設施-分道設施-快車道或一般車道間名稱_禁止變換車道線(無標記)",
-  # "車道劃分設施-分道設施-快車道或一般車道間名稱_禁止變換車道線(附標記)",
-  # "車道劃分設施-分道設施-快慢車道間名稱_寬式快慢車道分隔島(50公分以上)",
-  # "車道劃分設施-分道設施-快慢車道間名稱_快慢車道分隔線",
-  # "車道劃分設施-分道設施-快慢車道間名稱_窄式快慢車道分隔島(無柵欄)",
-  # "車道劃分設施-分道設施-快慢車道間名稱_窄式快慢車道分隔島(附柵欄)",
-  "車道劃分設施-分道設施-路面邊線名稱_有"
-  # "車道劃分設施-分向設施大類別名稱_行車分向線",
-  # "車道劃分設施-分向設施大類別名稱_雙向禁止超車線",
-  # "車道劃分設施-分向設施大類別名稱_單向禁止超車線",
-  # "車道劃分設施-分向設施大類別名稱_中央分向島"
+  # "車道劃分設施-分道設施-路面邊線名稱_有"
+  "Road Edge Line_Present"
 )
 
 analysis_data <- result_data%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
@@ -398,7 +226,6 @@ rpart.plot(tree_model, family = "PingFang")
 ```
 
 ```{r}
-
 library(caret)
 
 pred_class <- predict(tree_model, newdata = analysis_data, type = "class")
@@ -417,77 +244,54 @@ print(conf_matrix)
 
 ```{r}
 
-# 找鄰居的時候有個限制：鄰居一定要和自己是相反的，熱點抓鄰居也是熱點的沒有意義
-get_four_categories_data <- function(labeled_features, all_features_grid) {
-  
-  process_group <- function(
-    self_category_name, neighbor_category_name, neighbor_must_be_hot
-    ) {
-    
-    self_nodes <- labeled_features %>% filter(final_category == self_category_name)
-    self_node_indices <- which(labeled_features$final_category == self_category_name)
-    
-    valid_neighbor_node_indices <- unique(unlist(lapply(self_nodes$neighbors, function(nbs) {
-    
-      nbs_status <- labeled_features$is_hotspot[nbs]
-      # If neighbor_must_be_hot is TRUE，only save TRUE
-      # If neighbor_must_be_hot is FALSE，only save FALSE
-      real_nbs <- nbs[nbs_status == neighbor_must_be_hot]
-      # Remove self again to make sure
-      final_nbs <- setdiff(real_nbs, self_node_indices)
-      
-      return(final_nbs)
-    })))
-    
-    grid_indices_self <- unique(unlist(labeled_features$points_in_vertex[self_node_indices]))
-    grid_indices_neighbor <- unique(unlist(labeled_features$points_in_vertex[valid_neighbor_node_indices]))
-    
-    ambiguous_grids <- intersect(grid_indices_self, grid_indices_neighbor)
-    
-    clean_self_grids <- setdiff(grid_indices_self, ambiguous_grids)
-    clean_neighbor_grids <- setdiff(grid_indices_neighbor, ambiguous_grids)
-    
-    df_self <- all_features_grid[clean_self_grids, ] %>%
-      mutate(Group_Label = self_category_name)
-    
-    df_neighbor <- all_features_grid[clean_neighbor_grids, ] %>%
-      mutate(Group_Label = neighbor_category_name)
-    
-    return(bind_rows(df_self, df_neighbor))
-  }
-
-  data_group_a <- process_group(
-    self_category_name = "Hot_with_Safe_Neighbors_highbetweenness",
-    neighbor_category_name = "Broken_Neighbors",
-    neighbor_must_be_hot = FALSE
-  )
-
-  data_group_b <- process_group(
-    self_category_name = "Cold_with_Hot_Neighbors_highbetweenness",
-    neighbor_category_name = "Resilient_Neighbors",
-    neighbor_must_be_hot = TRUE 
-  )
-  
-  final_dataset <- bind_rows(data_group_a, data_group_b)
-  
-  return(final_dataset)
-}
-
 final_data_for_tree <- get_four_categories_data(df, final_all_features)
+final_data_for_tree <- final_data_for_tree %>%
+  mutate(Group_Label = recode(Group_Label,
+    "Hot_with_Safe_Neighbors_highbetweenness" = "Broken",
+    "Cold_with_Hot_Neighbors_highbetweenness" = "Resilient"
+  ))
+
+table(final_data_for_tree$Group_Label)
 ```
 
 ```{r}
+all_features_mean <- final_data_for_tree %>%
+  filter(Group_Label == 'Broken_Overlap' | Group_Label == 'Resilient_Overlap')%>%
+  group_by(Group_Label) %>%
+  summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE))) %>%
+  ungroup()
 
-MapperPlotter(
-  Mapper,
-  label = df$is_hotspot,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
+comparison_table <- all_features_mean %>%
+  pivot_longer(
+    cols = -Group_Label,
+    names_to = "Feature", 
+    values_to = "Mean_Value"
+  ) %>%
+  pivot_wider(
+    names_from = Group_Label,
+    values_from = "Mean_Value"
+  )
+
+l <- c('bn_feature', 'lr_feature', 'hotspot')
+diff_analysis <- comparison_table %>%
+  mutate(Diff_Broken = abs(Broken_Overlap - Resilient_Overlap)) %>% 
+  arrange(desc(Diff_Broken))%>%
+  head(20)
+
+diff_analysis %>%
+  filter(!Feature %in% l)%>%
+  select(Feature, Broken_Overlap, Resilient_Overlap) %>%
+  pivot_longer(cols = -Feature, names_to = "Group", values_to = "Value") %>%
+  ggplot(aes(x = Feature, y = Value, fill = Group)) +
+  geom_col(position = "dodge") +
+  coord_flip()
+
 ```
 
 ```{r}
-do_undersampling <- function(df, group1_name, group2_name) {
+do_undersampling <- function(
+    df, group1_name, group2_name
+    ) {
 
   data_g1 <- df %>% filter(Group_Label == group1_name)
   data_g2 <- df %>% filter(Group_Label == group2_name)
@@ -508,22 +312,17 @@ do_undersampling <- function(df, group1_name, group2_name) {
 ```
 
 ```{r}
-
-cols_to_remove <- c(
-  "車道劃分設施-分道設施-路面邊線名稱_有"
-)
-
-final_data_for_tree <- final_data_for_tree%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
+us_data_for_tree <- final_data_for_tree%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
 
 bad_group_balanced <- do_undersampling(
-  final_data_for_tree, 
-  "Hot_with_Safe_Neighbors_highbetweenness", 
+  us_data_for_tree, 
+  "Broken",# Hot_with_Safe_Neighbors_highbetweenness
   "Broken_Neighbors"
 )
 
 res_group_balanced <- do_undersampling(
-  final_data_for_tree, 
-  "Cold_with_Hot_Neighbors_highbetweenness", 
+  us_data_for_tree, 
+  "Resilient", # Cold_with_Hot_Neighbors_highbetweenness
   "Resilient_Neighbors"
 )
 
@@ -532,30 +331,74 @@ res_group_balanced <- do_undersampling(
 ```{r}
 #| message: false
 #| warning: false
-tree_model <- rpart(Group_Label ~ . , 
+tree_bad_model <- rpart(Group_Label ~ . , 
                     data = bad_group_balanced, 
                     method = "class",
-                    maxdepth = 10,
-                    control = rpart.control(cp = 0.001),
+                    maxdepth = 5,
+                    control = rpart.control(cp = 0.01),
                     parms = list(prior = c(0.5, 0.5)) 
                     )
-pred_class <- predict(tree_model, newdata = bad_group_balanced, type = "class")
+pred_class <- predict(tree_bad_model, newdata = bad_group_balanced, type = "class")
 conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(bad_group_balanced$Group_Label))
 
-# rpart.plot(tree_model, family = "PingFang")
 print(conf_matrix)
+
+png("../Layouts/tree_bad_model.png", width = 1200, height = 800)
+# rpart.plot(tree_bad_model, family = "PingFang", tweak = 1.5)
+rpart.plot(tree_bad_model, 
+           type = 4,
+           extra = 106,
+           under = TRUE,
+           fallen.leaves = FALSE,
+           box.palette = "BuGn",
+           # shadow.col = "gray",
+           nn = TRUE,
+           tweak = 1.1,
+           # varlen = 0, 
+           # faclen = 0, 
+)
+dev.off()
 ```
 
 ```{r}
-tree_model <- rpart(Group_Label ~ . , 
+tree_res_model <- rpart(Group_Label ~ . , 
                     data = res_group_balanced, 
                     method = "class",
-                    maxdepth = 10,
-                    control = rpart.control(cp = 0.001),
+                    maxdepth = 5,
+                    control = rpart.control(cp = 0.01),
                     parms = list(prior = c(0.5, 0.5)) 
                     )
-pred_class <- predict(tree_model, newdata = res_group_balanced, type = "class")
+pred_class <- predict(tree_res_model, newdata = res_group_balanced, type = "class")
 conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(res_group_balanced$Group_Label))
 
 print(conf_matrix)
+
+png("../Layouts/tree_res_model.png", width = 1200, height = 900, res = 300)
+rpart.plot(tree_res_model, 
+           type = 4,
+           extra = 106,
+           under = TRUE,
+           fallen.leaves = FALSE,
+           box.palette = "BuGn",
+           # shadow.col = "gray",
+           nn = TRUE,
+           tweak = 1.1,
+           # varlen = 0, 
+           # faclen = 0, 
+)
+dev.off()
+```
+
+```{r}
+library(jsonlite)
+export_data <- list(
+  adjacency = Mapper$adjacency,
+  num_vertices = Mapper$num_vertices,
+  level_of_vertex = Mapper$level_of_vertex,
+  points_in_vertex = Mapper$points_in_vertex,
+  original_data = as.data.frame(all_features),
+  # this is the label that already calculated for each node
+  cc = df
+)
+write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/ST-RTA-GIS/CalculatedData/Mapper/mapper_graph.json")
 ```

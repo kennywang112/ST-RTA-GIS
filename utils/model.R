@@ -184,7 +184,9 @@ tree_model_from_node <- function(
 
 
 # This is used in SNA.qmd to get the grid data
-get_comparison_data <- function(labeled_features, raw_grid_data) {
+get_comparison_data <- function(
+    labeled_features, raw_grid_data
+    ) {
 
   green_nodes <- labeled_features %>%
     filter(final_category == "Hot_with_Safe_Neighbors_highbetweenness")
@@ -215,39 +217,71 @@ get_comparison_data <- function(labeled_features, raw_grid_data) {
   return(comparison_data)
 }
 
+get_four_categories_data <- function(labeled_features, all_features_grid) {
 
-# This is used in SNA.qmd to get the original combined data but now it's not in use
-get_comparison_combined <- function(labeled_features, all_features_grid, combined_data) {
+  process_group <- function(
+    self_category_name, neighbor_category_name, neighbor_must_be_hot, overlap_category_name
+  ) {
 
-  extract_raw_group <- function(target_category, label_name) {
+    # 主角節點
+    self_nodes <- labeled_features %>% filter(final_category == self_category_name)
+    self_node_indices <- which(labeled_features$final_category == self_category_name)
 
-    target_nodes <- labeled_features %>%
-      filter(final_category == target_category)
-    grid_indices <- unique(unlist(target_nodes$points_in_vertex))
+    # 篩選鄰居節點
+    valid_neighbor_node_indices <- unique(unlist(lapply(self_nodes$neighbors, function(nbs) {
+      if (length(nbs) == 0) return(NULL)
+      nbs_status <- labeled_features$is_hotspot[nbs]
+      real_nbs <- nbs[nbs_status == neighbor_must_be_hot]
+      final_nbs <- setdiff(real_nbs, self_node_indices)
+      return(final_nbs)
+    })))
 
-    if (length(grid_indices) == 0) return(NULL)
+    # 轉成 Grid Indices
+    grid_indices_self <- unique(unlist(labeled_features$points_in_vertex[self_node_indices]))
+    grid_indices_neighbor <- unique(unlist(labeled_features$points_in_vertex[valid_neighbor_node_indices]))
 
-    target_grid_features <- all_features_grid[grid_indices, ]
-    parsed_list <- lapply(target_grid_features$grid_filter, fromJSON)
-    raw_data_indices <- unique(unlist(parsed_list))
-    raw_data <- combined_data[raw_data_indices, ] %>%
-      mutate(group_label = label_name)
+    # 找出重疊和純淨的部分
+    ambiguous_grids <- intersect(grid_indices_self, grid_indices_neighbor) # 重疊區
+    clean_self_grids <- setdiff(grid_indices_self, ambiguous_grids) # 純主角
+    clean_neighbor_grids <- setdiff(grid_indices_neighbor, ambiguous_grids) # 純鄰居
 
-    return(raw_data)
+    # 純主角
+    df_self <- all_features_grid[clean_self_grids, ] %>%
+      mutate(Group_Label = self_category_name)
+
+    # 純鄰居
+    if(length(clean_neighbor_grids) > 0){
+      df_neighbor <- all_features_grid[clean_neighbor_grids, ] %>%
+        mutate(Group_Label = neighbor_category_name)
+    } else {
+      df_neighbor <- data.frame()
+    }
+
+    # 重疊區
+    df_overlap <- data.frame()
+    if (length(ambiguous_grids) > 0) {
+      df_overlap <- all_features_grid[ambiguous_grids, ] %>%
+        mutate(Group_Label = overlap_category_name)
+    }
+
+    return(bind_rows(df_self, df_neighbor, df_overlap))
   }
 
-  green_raw_combined <- extract_raw_group(
-    "Hot_with_Safe_Neighbors_highbetweenness",
-    "Broken_Bridge"
-  )
-  orange_raw_combined <- extract_raw_group(
-    "Cold_with_Hot_Neighbors_highbetweenness",
-    "Resilient_Bridge"
+  data_group_a <- process_group(
+    self_category_name = "Hot_with_Safe_Neighbors_highbetweenness",
+    neighbor_category_name = "Broken_Neighbors",
+    neighbor_must_be_hot = FALSE,
+    overlap_category_name = "Broken_Overlap"
   )
 
-  comparison_data <- bind_rows(green_raw_combined, orange_raw_combined)
+  data_group_b <- process_group(
+    self_category_name = "Cold_with_Hot_Neighbors_highbetweenness",
+    neighbor_category_name = "Resilient_Neighbors",
+    neighbor_must_be_hot = TRUE,
+    overlap_category_name = "Resilient_Overlap"
+  )
 
-  return(comparison_data)
+  final_dataset <- bind_rows(data_group_a, data_group_b)
+
+  return(final_dataset)
 }
-
-# final_raw_data <- get_comparison_combined(df, all_features_grid, combined_data)
