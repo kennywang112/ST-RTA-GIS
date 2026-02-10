@@ -10,9 +10,6 @@ editor: visual
 
 source('../AnalyzeV2/MapperforSNA.R')
 set.seed(123)
-```
-
-```{r}
 
 source('../Analyze/utils.R')
 existing_cols <- intersect(names(all_features), names(col_translation))
@@ -92,9 +89,9 @@ all_features_grid <- cbind(all_features, grid_filter)
 node_hotspot_values <- vapply(Mapper$points_in_vertex, function(idx) {
   mean(all_features$hotspot[idx], na.rm = TRUE)
 }, numeric(1))
+
 features$hotspot <- node_hotspot_values
-features <- features%>%
-  mutate(hotspott = ifelse(hotspot > 0.2, 1, 0))
+features <- features%>%mutate(hotspott = ifelse(hotspot > 0.2, 1, 0))
 
 filter_features <- features%>%
   mutate(
@@ -156,7 +153,7 @@ MapperPlotter(
 )
 ```
 
-## This is to classify using grid-based data (all_features.csv)
+# This is to classify using grid-based data (all_features.csv)
 
 ### This finds the maximum speed difference in grid
 
@@ -220,18 +217,10 @@ dev.off()
 ```
 
 ```{r}
-#| message: false
-#| warning: false
-rpart.plot(tree_model, family = "PingFang")
-```
-
-```{r}
 library(caret)
 
 pred_class <- predict(tree_model, newdata = analysis_data, type = "class")
-
-conf_matrix <- confusionMatrix(data = pred_class, 
-                               reference = as.factor(analysis_data$group_label))
+conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(analysis_data$group_label))
 
 print(conf_matrix)
 ```
@@ -256,11 +245,10 @@ table(final_data_for_tree$Group_Label)
 
 ```{r}
 all_features_mean <- final_data_for_tree %>%
-  filter(Group_Label == 'Broken_Overlap' | Group_Label == 'Resilient_Overlap')%>%
   group_by(Group_Label) %>%
   summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE))) %>%
   ungroup()
-
+all_features_mean$Group_Label%>%unique()
 comparison_table <- all_features_mean %>%
   pivot_longer(
     cols = -Group_Label,
@@ -272,20 +260,34 @@ comparison_table <- all_features_mean %>%
     values_from = "Mean_Value"
   )
 
-l <- c('bn_feature', 'lr_feature', 'hotspot')
-diff_analysis <- comparison_table %>%
-  mutate(Diff_Broken = abs(Broken_Overlap - Resilient_Overlap)) %>% 
-  arrange(desc(Diff_Broken))%>%
-  head(20)
+for (main_group in c("Broken", "Resilient")) {
 
-diff_analysis %>%
-  filter(!Feature %in% l)%>%
-  select(Feature, Broken_Overlap, Resilient_Overlap) %>%
-  pivot_longer(cols = -Feature, names_to = "Group", values_to = "Value") %>%
-  ggplot(aes(x = Feature, y = Value, fill = Group)) +
-  geom_col(position = "dodge") +
-  coord_flip()
+  neighbor_group <- paste0(main_group, "_Neighbors")
+  overlap_group  <- paste0(main_group, "_Overlap")
 
+  group_order <- c(main_group, overlap_group, neighbor_group)
+
+  plot_data <- comparison_table %>%
+    filter(!Feature %in% l, Feature != 'Road Edge Line_Present') %>%
+    mutate(diff_val = abs(.data[[main_group]] - .data[[neighbor_group]])) %>%
+    arrange(desc(diff_val)) %>%
+    head(20) %>%
+    mutate(Feature = reorder(Feature, diff_val)) %>%
+    pivot_longer(
+      cols = -c(Feature, diff_val), 
+      names_to = "Group", 
+      values_to = "Value")%>%
+    filter(Group %in% group_order) %>%
+    mutate(Group = factor(Group, levels = group_order))
+
+  p <- ggplot(plot_data, aes(x = reorder(Feature, Value), y = Value, fill = Group)) +
+    geom_col(position = "dodge", width = 0.7) +
+    coord_flip() +
+    labs(title = paste(main_group, "Group"), y = "Mean Proportion", x = NULL) +
+    theme_minimal()
+  
+  print(p)
+}
 ```
 
 ```{r}
@@ -353,7 +355,7 @@ rpart.plot(tree_bad_model,
            box.palette = "BuGn",
            # shadow.col = "gray",
            nn = TRUE,
-           tweak = 1.1,
+           tweak = 1,
            # varlen = 0, 
            # faclen = 0, 
 )

@@ -17,9 +17,13 @@ source('../../TDA-R/MapperAlgo/R/MapperAlgo.R')
 source('../../TDA-R/MapperAlgo/R/Plotter.R')
 
 filter_data <- read_csv("../../ST-RTA/ComputedDataV4/ForModel/filtered_dataV1.csv")
+
 combined_data <- read_csv("../../ST-RTA/ComputedDataV2/Grid/combined_data.csv")
 
-all_features <- read_csv("../../ST-RTA/ComputedDataV4/ForModel/all_features.csv")
+all_features <- read_csv("../../ST-RTA/ComputedDataV4/ForModel/all_features.csv")%>%select(-hotspot)
+new_label <- read_csv("../../ST-RTA/ComputedDataV2/ForModel/all_featuresV3.csv")
+all_features$hotspot <- new_label$hotspot
+
 grid_filter <- read_csv("../../ST-RTA/ComputedDataV2/Grid/grid_filter.csv")$accident_indices
 all_features_grid <- cbind(all_features, grid_filter)
 
