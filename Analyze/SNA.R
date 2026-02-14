@@ -92,8 +92,8 @@ export_data <- list(
   cc = tibble(
     eigen_centrality = e_scores,
     betweenness = b_scores,
-    weighted_betweenness = b_scores_weighted,
-    weighted_eigen_centrality = e_scores_weighted,
+    # weighted_betweenness = b_scores_weighted,
+    # weighted_eigen_centrality = e_scores_weighted,
     eigen_top10 = e_labels,
     betweenness_top10 = b_labels,
     threshold_hotspot = features$hotspott
