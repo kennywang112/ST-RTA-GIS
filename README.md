@@ -2,7 +2,7 @@
 
 This repo is based on ST-RTA, but analyze with QGIS and R, analyze goal including:
 
--    Mapper Algorithm: Identify high-risk road segments and intersections for traffic accidents in Taiwan, and integrate SNA with TDA for reveal main hotspot factor.
+-   Mapper Algorithm: Identify high-risk road segments and intersections for traffic accidents in Taiwan, and integrate SNA with TDA for reveal main hotspot factor.
 
 -   Spatial Analysis: Explore spatial patterns and trends of traffic accidents in Taiwan using various spatial analysis techniques.
 
