@@ -1,8 +1,5 @@
-library(sf)
-library(dplyr)
 library(stringr)
 library(purrr)
-library(tidyr)
 source("./Analyze/ReadData.R")
 
 # taipei_roads

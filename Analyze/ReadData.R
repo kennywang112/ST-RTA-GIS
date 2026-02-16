@@ -25,10 +25,10 @@ taipei <- st_read(dsn="~/Desktop/ST-RTA-GIS/Data/縣市界線(TWD97經緯度)/CO
   #                          "臺東縣"))
 
 # crs transformation
-roads_3826  <- roads%>%st_transform(crs)
-taipei_3826 <- taipei%>%st_transform(crs)
-
-taipei_roads <- st_intersection(roads_3826, taipei_3826)
+# roads_3826  <- roads%>%st_transform(crs)
+# taipei_3826 <- taipei%>%st_transform(crs)
+#
+# taipei_roads <- st_intersection(roads_3826, taipei_3826)
 
 # write_sf(
 #   taipei_roads,
