@@ -2,10 +2,17 @@ library(sf)
 library(tidyverse)
 # 這個檔案的目的是找出離每個事故最近的youbike設施
 youbike <- read_csv('../ST-RTA/ComputedData/Youbike/full_youbike.csv')
+mrt <- read_csv('../ST-RTA/ComputedData/MRT/full_mrt.csv')
+parking <- read_csv('../ST-RTA/ComputedData/Parkinglot/full_parkinglot.csv')
+
 combined_data1 <- read_csv("~/Desktop/ST-RTA/ComputedDataV2/Accident/combined_data_in_taiwan.csv")
 combined_data <- combined_data1%>%filter(`道路類別-第1當事者-名稱` == '市區道路')
 
 youbike_sf <- st_as_sf(youbike, coords = c("PositionLon", "PositionLat"), crs = 4326) %>%
+  st_transform(3826)
+mrt_sf <- st_as_sf(mrt, coords = c("PositionLon", "PositionLat"), crs = 4326) %>%
+  st_transform(3826)
+parking_sf <- st_as_sf(parking, coords = c("PositionLon", "PositionLat"), crs = 4326) %>%
   st_transform(3826)
 
 combined_sf <- st_as_sf(combined_data, coords = c("經度", "緯度"), crs = 4326) %>%
@@ -42,66 +49,75 @@ library(future.apply)
 plan(multisession, workers = 3)
 message(paste("Cell:", availableCores() - 1))
 
-n_sample_size <- 10000
-n_sim <- 50
-n_points <- nrow(combined_data)
-dist_grid <- seq(0, 500, by = 5)
-
-urban_mask <- youbike_sf %>%
-  st_buffer(500) %>%
-  st_union() %>%
-  st_as_sf()
-
-set.seed(123)
-accidents_sampled <- combined_data %>% sample_n(n_sample_size)
-real_dists <- accidents_sampled$dist_to_nearest_youbike
-real_cdf <- ecdf(real_dists)(dist_grid)
-
-run_simulation <- function(i) {
-  rand_pts <- st_sample(urban_mask, size = n_sample_size) %>%
-    st_as_sf() %>%
-    st_cast("POINT")
-
-  idx <- st_nearest_feature(rand_pts, youbike_sf)
-  dists <- st_distance(rand_pts, youbike_sf[idx,], by_element = TRUE)
-  dists_numeric <- as.numeric(dists)
-
-  return(ecdf(dists_numeric)(dist_grid))
-}
-
-results_list <- future_lapply(1:n_sim, run_simulation, future.seed = 999)
-# col: times of simulation, row: distance grid
-sim_results_matrix <- do.call(cbind, results_list)
-plan(sequential)
-
-env_hi <- apply(sim_results_matrix, 1, max)
-env_lo <- apply(sim_results_matrix, 1, min)
-env_mean <- apply(sim_results_matrix, 1, mean)
-
-real_dists <- combined_data$dist_to_nearest_youbike
-real_cdf <- ecdf(real_dists)(dist_grid)
-
-plot_data <- data.frame(
-  distance = dist_grid,
-  obs = real_cdf,
-  hi = env_hi,
-  lo = env_lo,
-  mean = env_mean
+facility_list <- list(
+  "Youbike" = youbike_sf,
+  "MRT" = mrt_sf,
+  "Parking" = parking_sf
 )
 
-simulation <- ggplot(plot_data, aes(x = distance)) +
-  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "grey70", alpha = 0.5) +
-  geom_line(aes(y = mean, color = "Random Baseline (CSR)"), linetype = "dashed", linewidth = 1) +
-  geom_line(aes(y = obs, color = "Real Accidents"), linewidth = 1.2) +
-  scale_color_manual(values = c("Real Accidents" = "black", "Random Baseline (CSR)" = "red")) +
-  labs(title = "Spatial Association Test",
-       subtitle = paste0("Observed vs. ", n_sim, " Simulations"),
-       x = "Distance to Nearest YouBike (meters)",
-       y = "Cumulative Proportion (CDF)",
-       color = "Legend") +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-ggsave("./Layouts/simulation.png", simulation, width = 5, height = 5)
+for (f_name in names(facility_list)){
+  dt <- facility_list[[f_name]]
+  n_sample_size <- 10000
+  n_sim <- 50
+  dist_grid <- seq(0, 500, by = 5)
+
+  urban_mask <- youbike_sf %>%
+    st_buffer(500) %>%
+    st_union() %>%
+    st_as_sf()
+
+  set.seed(123)
+  idx_obs <- st_nearest_feature(combined_sf, dt)
+  real_dists_actual <- as.numeric(st_distance(combined_sf, dt[idx_obs,], by_element = TRUE))
+  real_cdf <- ecdf(real_dists_actual)(dist_grid)
+
+  run_simulation <- function(i) {
+    rand_pts <- st_sample(urban_mask, size = n_sample_size) %>%
+      st_as_sf() %>%
+      st_cast("POINT")
+
+    idx <- st_nearest_feature(rand_pts, dt)
+    dists <- st_distance(rand_pts, dt[idx,], by_element = TRUE)
+    dists_numeric <- as.numeric(dists)
+
+    return(ecdf(dists_numeric)(dist_grid))
+  }
+
+  results_list <- future_lapply(1:n_sim, run_simulation, future.seed = 999)
+  # col: times of simulation, row: distance grid
+  sim_results_matrix <- do.call(cbind, results_list)
+  plan(sequential)
+
+  env_hi <- apply(sim_results_matrix, 1, max)
+  env_lo <- apply(sim_results_matrix, 1, min)
+  env_mean <- apply(sim_results_matrix, 1, mean)
+
+  plot_data <- data.frame(
+    distance = dist_grid,
+    obs = real_cdf,
+    hi = env_hi,
+    lo = env_lo,
+    mean = env_mean
+  )
+
+  simulation <- ggplot(plot_data, aes(x = distance)) +
+    geom_ribbon(aes(ymin = lo, ymax = hi), fill = "grey70", alpha = 0.5) +
+    geom_line(aes(y = mean, color = "Random Baseline (CSR)"), linetype = "dashed", linewidth = 1) +
+    geom_line(aes(y = obs, color = "Real Accidents"), linewidth = 1.2) +
+    scale_color_manual(values = c("Real Accidents" = "black", "Random Baseline (CSR)" = "red")) +
+    labs(title = paste("Spatial Association Test:", f_name),
+         subtitle = paste0("Observed vs. ", n_sim, " Simulations"),
+         x = paste("Distance to Nearest", f_name, "(meters)"),
+         y = "Cumulative Proportion (CDF)",
+         color = "Legend") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+
+  file_name <- paste0("./Layouts/simulation_", f_name, ".png")
+  ggsave(file_name, simulation, width = 6, height = 6)
+
+  message(paste("Completed simulation for", f_name))
+}
 
 # 串連速限以及youbike之間的關聯
 med <- median(combined_data$`速限-第1當事者`, na.rm = TRUE)

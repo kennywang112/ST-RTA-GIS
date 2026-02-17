@@ -16,7 +16,7 @@ existing_cols <- intersect(names(all_features), names(col_translation))
 names(all_features)[match(existing_cols, names(all_features))] <- col_translation[existing_cols]
 ```
 
-## Social Network Analysis
+## 1. Social Network Analysis
 
 This is to get the eigen centrality and betweenness
 
@@ -47,7 +47,7 @@ top_10_eigen_indices <- head(order(e_scores, decreasing = TRUE), 10)
 e_labels[top_10_eigen_indices] <- 1
 ```
 
-## Mapper algorithm plot
+Mapper plot
 
 ```{r}
 MapperPlotter(
@@ -67,7 +67,7 @@ MapperPlotter(
 )
 ```
 
-Get node features
+## 2. Get node features
 
 ```{r}
 
@@ -109,7 +109,7 @@ filter_features <- features%>%
   filter(!map_lgl(neighbor_points, is.null))
 ```
 
-# Model
+## 3. Model
 
 ```{r}
 hotspot_threshold <- 0.5
@@ -144,16 +144,7 @@ df <- df %>%
 table(df$final_category)
 ```
 
-```{r}
-MapperPlotter(
-  Mapper,
-  label = df$final_category,
-  original_data = filter_data,
-  use_embedding=TRUE
-)
-```
-
-# This is to classify using grid-based data (all_features.csv)
+## 4. This is to classify using grid-based data (all_features.csv)
 
 ### This finds the maximum speed difference in grid
 
@@ -200,12 +191,15 @@ result_data%>%
 library(rpart)
 library(rpart.plot)
 
+# This is for original version, now we're testing v2
 cols_to_remove <- c(
   # "車道劃分設施-分道設施-路面邊線名稱_有"
   "Road Edge Line_Present"
 )
-
 analysis_data <- result_data%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
+# This is for new version, now we're testing v1
+# analysis_data <- result_data%>%select(-hotspot)
+
 tree_model <- rpart(group_label ~ . , data = analysis_data, method = "class")
 
 library(showtext)
@@ -314,7 +308,21 @@ do_undersampling <- function(
 ```
 
 ```{r}
-us_data_for_tree <- final_data_for_tree%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
+# us_data_for_tree <- final_data_for_tree%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
+
+library(scales)
+us_data_for_tree <- final_data_for_tree %>%
+  select(-matches("County|ent"))
+
+target_cols <- c("hotspot", "Group_Label")
+us_data_for_tree <- us_data_for_tree %>%
+  mutate(across(
+    .cols = where(is.numeric) & !all_of(target_cols), 
+    .fns = ~ scales::rescale(.)
+  ))
+```
+
+```{r}
 
 bad_group_balanced <- do_undersampling(
   us_data_for_tree, 
@@ -403,4 +411,17 @@ export_data <- list(
   cc = df
 )
 write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/ST-RTA-GIS/CalculatedData/Mapper/mapper_graph.json")
+```
+
+## 合併
+
+```{r}
+us_data_for_tree$Group_Label%>%unique()
+
+us_data_for_tree <- us_data_for_tree%>%
+  mutate(
+    Group_v2 = case_when(
+      
+    )
+  )
 ```
