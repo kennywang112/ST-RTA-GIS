@@ -65,7 +65,16 @@ MapperPlotter(
   avg=TRUE,
   use_embedding=FALSE
 )
+
+MapperPlotter(
+  Mapper,
+  label = df$final_category,
+  original_data = filter_data,
+  use_embedding=TRUE
+)
 ```
+
+![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAbElEQVR4Xs2RQQrAMAgEfZgf7W9LAguybljJpR3wEse5JOL3ZObDb4x1loDhHbBOFU6i2Ddnw2KNiXcdAXygJlwE8OFVBHDgKrLgSInN4WMe9iXiqIVsTMjH7z/GhNTEibOxQswcYIWYOR/zAjBJfiXh3jZ6AAAAAElFTkSuQmCC){alt=""}
 
 ## 2. Get node features
 
@@ -192,13 +201,13 @@ library(rpart)
 library(rpart.plot)
 
 # This is for original version, now we're testing v2
-cols_to_remove <- c(
-  # "車道劃分設施-分道設施-路面邊線名稱_有"
-  "Road Edge Line_Present"
-)
-analysis_data <- result_data%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
+# cols_to_remove <- c(
+#   # "車道劃分設施-分道設施-路面邊線名稱_有"
+#   "Road Edge Line_Present"
+# )
+# analysis_data <- result_data%>%select(-hotspot, -cols_to_remove, -no_lane, -bn_feature, -lr_feature)
 # This is for new version, now we're testing v1
-# analysis_data <- result_data%>%select(-hotspot)
+analysis_data <- result_data%>%select(-hotspot)
 
 tree_model <- rpart(group_label ~ . , data = analysis_data, method = "class")
 
@@ -339,13 +348,61 @@ res_group_balanced <- do_undersampling(
 ```
 
 ```{r}
+# This is new: to transform proportion to category
+categorize_feature <- function(x) {
+  if (!is.numeric(x)) return(x)
+
+  case_when(
+    x >= 0.8 ~ "Dominant",
+    x <= 0.2 ~ "Minor",
+    TRUE ~ "Mixed"
+  )
+}
+
+exclude_cols <- c("hotspot", "group_label", "grid_id", "bn_feature", "lr_feature", "no_lane") 
+
+bad_group_balanced <- bad_group_balanced %>%
+  mutate(across(
+    .cols = where(is.numeric) & !any_of(exclude_cols),
+  
+    .fns = function(x) {
+      if (max(x, na.rm = TRUE) <= 1 && min(x, na.rm = TRUE) >= 0) {
+        return(categorize_feature(x))
+      } else {
+        return(x)
+      }
+    }
+  )) %>%
+  mutate(across(where(is.character), as.factor))%>%
+  select(-c('lr_feature', 'hotspot', 'bn_feature', 'no_lane'))
+
+res_group_balanced <- res_group_balanced %>%
+  mutate(across(
+    .cols = where(is.numeric) & !any_of(exclude_cols),
+  
+    .fns = function(x) {
+      if (max(x, na.rm = TRUE) <= 1 && min(x, na.rm = TRUE) >= 0) {
+        return(categorize_feature(x))
+      } else {
+        return(x)
+      }
+    }
+  )) %>%
+  mutate(across(where(is.character), as.factor))%>%
+  select(-c('lr_feature', 'hotspot', 'bn_feature', 'no_lane'))
+```
+
+```{r}
 #| message: false
 #| warning: false
+
+library(showtext)
+showtext_auto()
 tree_bad_model <- rpart(Group_Label ~ . , 
                     data = bad_group_balanced, 
                     method = "class",
-                    maxdepth = 5,
-                    control = rpart.control(cp = 0.01),
+                    maxdepth = 4,
+                    control = rpart.control(cp = 0.02, minbucket = 30),
                     parms = list(prior = c(0.5, 0.5)) 
                     )
 pred_class <- predict(tree_bad_model, newdata = bad_group_balanced, type = "class")
@@ -353,7 +410,7 @@ conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(bad_grou
 
 print(conf_matrix)
 
-png("../Layouts/tree_bad_model.png", width = 1200, height = 800)
+png("../Layouts/tree_bad_model_cat.png", width = 1200, height = 800)
 # rpart.plot(tree_bad_model, family = "PingFang", tweak = 1.5)
 rpart.plot(tree_bad_model, 
            type = 4,
@@ -374,16 +431,16 @@ dev.off()
 tree_res_model <- rpart(Group_Label ~ . , 
                     data = res_group_balanced, 
                     method = "class",
-                    maxdepth = 5,
-                    control = rpart.control(cp = 0.01),
-                    parms = list(prior = c(0.5, 0.5)) 
+                    maxdepth = 4,
+                    control = rpart.control(cp = 0.02, minbucket = 30),
+                    parms = list(prior = c(0.5, 0.5)),
                     )
 pred_class <- predict(tree_res_model, newdata = res_group_balanced, type = "class")
 conf_matrix <- confusionMatrix(data = pred_class, reference = as.factor(res_group_balanced$Group_Label))
 
 print(conf_matrix)
 
-png("../Layouts/tree_res_model.png", width = 1200, height = 900, res = 300)
+png("../Layouts/tree_res_model_cat.png", width = 1200, height = 900)
 rpart.plot(tree_res_model, 
            type = 4,
            extra = 106,
@@ -392,7 +449,7 @@ rpart.plot(tree_res_model,
            box.palette = "BuGn",
            # shadow.col = "gray",
            nn = TRUE,
-           tweak = 1.1,
+           tweak = 1,
            # varlen = 0, 
            # faclen = 0, 
 )
@@ -400,28 +457,15 @@ dev.off()
 ```
 
 ```{r}
-library(jsonlite)
-export_data <- list(
-  adjacency = Mapper$adjacency,
-  num_vertices = Mapper$num_vertices,
-  level_of_vertex = Mapper$level_of_vertex,
-  points_in_vertex = Mapper$points_in_vertex,
-  original_data = as.data.frame(all_features),
-  # this is the label that already calculated for each node
-  cc = df
-)
-write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/ST-RTA-GIS/CalculatedData/Mapper/mapper_graph.json")
-```
-
-## 合併
-
-```{r}
-us_data_for_tree$Group_Label%>%unique()
-
-us_data_for_tree <- us_data_for_tree%>%
-  mutate(
-    Group_v2 = case_when(
-      
-    )
-  )
+# library(jsonlite)
+# export_data <- list(
+#   adjacency = Mapper$adjacency,
+#   num_vertices = Mapper$num_vertices,
+#   level_of_vertex = Mapper$level_of_vertex,
+#   points_in_vertex = Mapper$points_in_vertex,
+#   original_data = as.data.frame(all_features),
+#   # this is the label that already calculated for each node
+#   cc = df
+# )
+# write(toJSON(export_data, auto_unbox = TRUE), "~/desktop/ST-RTA-GIS/CalculatedData/Mapper/mapper_graph.json")
 ```

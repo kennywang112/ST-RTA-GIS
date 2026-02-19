@@ -1,22 +1,6 @@
-library(sf)
-library(tidyverse)
-# 這個檔案的目的是找出離每個事故最近的youbike設施
-youbike <- read_csv('../ST-RTA/ComputedData/Youbike/full_youbike.csv')
-mrt <- read_csv('../ST-RTA/ComputedData/MRT/full_mrt.csv')
-parking <- read_csv('../ST-RTA/ComputedData/Parkinglot/full_parkinglot.csv')
+source('./utils/ReadData.R')
 
-combined_data1 <- read_csv("~/Desktop/ST-RTA/ComputedDataV2/Accident/combined_data_in_taiwan.csv")
-combined_data <- combined_data1%>%filter(`道路類別-第1當事者-名稱` == '市區道路')
-
-youbike_sf <- st_as_sf(youbike, coords = c("PositionLon", "PositionLat"), crs = 4326) %>%
-  st_transform(3826)
-mrt_sf <- st_as_sf(mrt, coords = c("PositionLon", "PositionLat"), crs = 4326) %>%
-  st_transform(3826)
-parking_sf <- st_as_sf(parking, coords = c("PositionLon", "PositionLat"), crs = 4326) %>%
-  st_transform(3826)
-
-combined_sf <- st_as_sf(combined_data, coords = c("經度", "緯度"), crs = 4326) %>%
-  st_transform(3826)
+combined_sf <- combined_sf%>%filter(`道路類別-第1當事者-名稱` == '市區道路')
 
 nearest_idx <- st_nearest_feature(combined_sf, youbike_sf)
 dist_to_youbike <- st_distance(combined_sf, youbike_sf[nearest_idx,], by_element = TRUE)
@@ -146,10 +130,10 @@ plot_data_stratified <- combined_data %>%
   ))
 
 random_points <- st_sample(urban_mask, size = 10000) %>% st_as_sf() %>% st_cast("POINT")
-nearest_idx_rand <- st_nearest_feature(random_points, youbike_sf)
+nearest_idx_rand <- st_nearest_feature(random_points, differnce)
 dist_rand_matrix <- st_distance(random_points, youbike_sf[nearest_idx_rand, ], by_element = TRUE)
-dist_rand <- as.numeric(dist_rand_matrix)
-df_random <- data.frame(dist = dist_rand)
+df_random <- data.frame(dist = as.numeric(dist_rand_matrix))
+
 
 speed_limit_youbike <- ggplot() +
   stat_ecdf(data = df_random,
@@ -170,6 +154,8 @@ speed_limit_youbike <- ggplot() +
   theme(legend.position = "bottom", legend.box = "vertical")
 
 ggsave("./Layouts/speed_limit_youbike_cdf.png", speed_limit_youbike, width = 5, height = 5)
+
+
 
 # Speed difference
 # boundary <- st_read('../ST-RTA/ComputedDataV2/Taiwan/taiwan.shp')
