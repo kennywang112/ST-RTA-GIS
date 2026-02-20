@@ -14,9 +14,11 @@ source('../utils/ReadData.R')
 library(future.apply)
 plan(multisession, workers = 3)
 message(paste("Cell:", availableCores() - 1))
+
+set.seed(123)
 ```
 
-##  Distance to Nearest Youbike, MRT, Parking Distribution
+## Distance to Nearest Youbike, MRT, Parking Distribution
 
 ```{r}
 facility_list <- list(
@@ -85,33 +87,27 @@ for (f_name in names(facility_list)){
   
   message(paste("Starting simulation for", f_name, "..."))
   dt <- facility_list[[f_name]]
-  urban_mask <- dt %>%
-    st_combine() %>%
-    st_buffer(500) %>%
-    st_as_sf()
+  urban_mask <- dt %>% st_combine() %>% st_buffer(500) %>% st_as_sf()
 
   idx_obs <- st_nearest_feature(combined_sf, dt)
   real_dists_actual <- as.numeric(st_distance(combined_sf, dt[idx_obs,], by_element = TRUE))
   real_cdf <- ecdf(real_dists_actual)(dist_grid)
-
+  
   results_list <- future_lapply(1:n_sim, run_simulation, 
                                 target_dt = dt, 
                                 mask_sf = urban_mask, 
                                 future.seed = 999)
-  
   sim_results_matrix <- do.call(cbind, results_list)
-  env_hi <- apply(sim_results_matrix, 1, max)
-  env_lo <- apply(sim_results_matrix, 1, min)
-  env_mean <- apply(sim_results_matrix, 1, mean)
 
-  plot_data <- data.frame(
+  this_plot_data <- data.frame(
     distance = dist_grid,
     obs = real_cdf,
-    hi = env_hi,
-    lo = env_lo,
-    mean = env_mean)
+    hi = apply(sim_results_matrix, 1, max),
+    lo = apply(sim_results_matrix, 1, min),
+    mean = apply(sim_results_matrix, 1, mean)
+  )
   
-  simulation <- ggplot(plot_data, aes(x = distance)) +
+  simulation <- ggplot(this_plot_data, aes(x = distance)) +
     geom_ribbon(aes(ymin = lo, ymax = hi), fill = "grey70", alpha = 0.5) +
     geom_line(aes(y = mean, color = "Random Baseline (CSR)"), linetype = "dashed", linewidth = 1) +
     geom_line(aes(y = obs, color = "Real Accidents"), linewidth = 1.2) +
@@ -132,7 +128,9 @@ for (f_name in names(facility_list)){
 }
 ```
 
-## Accident Speed Limit Distribution
+# Speed Limit
+
+## Accident Distribution
 
 ```{r}
 # 串連速限以及youbike之間的關聯
@@ -158,6 +156,10 @@ speed_distribution
 ## Speed Limit CSR
 
 ```{r}
+idx_yb_strat <- st_nearest_feature(combined_sf, youbike_sf)
+dist_yb_strat <- st_distance(combined_sf, youbike_sf[idx_yb_strat,], by_element = TRUE)
+combined_data$dist_to_nearest_youbike <- as.numeric(dist_yb_strat)
+
 plot_data_stratified <- combined_data %>%
   mutate(speed_group = case_when(
     `速限-第1當事者` < 50 ~ "Low Speed (<50)",
@@ -212,4 +214,81 @@ speed_limit_youbike <- ggplot() +
 speed_limit_youbike
 
 ggsave("../Layouts/speed_limit_youbike_cdf.png", speed_limit_youbike, width = 5, height = 5)
+```
+
+# Speed Difference
+
+```{r}
+boundary <- read_csv('../../ST-RTA/ComputedDataV2/Taiwan/taiwan_無離島.csv')%>%
+  st_as_sf(wkt = "geometry", crs = 3826)
+
+differnce <- st_read("../CalculatedData/pairs_annot_all_cities.shp")%>%
+  st_as_sf(geometry = "geometry", crs = 3826)%>%
+  # find the points in boundary
+  st_join(boundary, join = st_within, left = FALSE)
+```
+
+## Distribution
+
+```{r}
+# distribution
+nearest_idx_spd <- st_nearest_feature(combined_sf, differnce)
+dist_to_spd <- st_distance(combined_sf, differnce[nearest_idx_spd,], by_element = TRUE)
+combined_data$dist_to_nearest_spd <- as.numeric(dist_to_spd)
+
+threshold <- quantile(combined_data$dist_to_nearest_spd, 0.95, na.rm = TRUE)
+med <- median(combined_data$dist_to_nearest_spd, na.rm = TRUE)
+mean_dist <- mean(combined_data$dist_to_nearest_spd, na.rm = TRUE)
+distance_spd <- combined_data%>%
+  filter(dist_to_nearest_spd <= threshold) %>%
+  ggplot(aes(x = dist_to_nearest_spd)) +
+  geom_histogram(binwidth = 10) +
+  geom_vline(xintercept = med, color = "blue", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = mean_dist, color = "red", linetype = "dashed", size = 1) +
+  annotate("text", x = med, y = Inf, label = paste("Median:", round(med, 2)),
+           color = "blue", vjust = 1.5, hjust = 1.1, size = 3.5) +
+  annotate("text", x = mean_dist, y = Inf, label = paste("Median:", round(mean_dist, 2)),
+           color = "red", vjust = 1.5, hjust = 1.1, size = 3.5) +
+  labs(title = "Distribution of Distance to Nearest Youbike Station",
+       x = "Distance to Nearest Youbike Station (meters)",
+       y = "Frequency") +
+  theme_minimal()
+print(distance_spd)
+# ggsave("../Layouts/distance_to_spd_histogram.png", distance_spd, width = 8, height = 5)
+```
+
+```{r}
+
+## speed 不討論速差，只考慮距離到速差點
+urban_mask_sd <- differnce %>% st_combine() %>% st_buffer(500) %>% st_as_sf()
+sd_results_list <- future_lapply(1:n_sim, run_simulation, 
+                                 target_dt = differnce, mask_sf = urban_mask_sd, future.seed = 999)
+sd_sim_matrix <- do.call(cbind, sd_results_list)
+
+sd_idx_obs <- st_nearest_feature(combined_sf, differnce)
+sd_real_dist <- as.numeric(st_distance(combined_sf, differnce[sd_idx_obs,], by_element = TRUE))
+sd_real_cdf <- ecdf(sd_real_dist)(dist_grid)
+
+plot_data_sd <- data.frame(
+  distance = dist_grid,
+  obs = sd_real_cdf,
+  hi = apply(sd_sim_matrix, 1, max),
+  lo = apply(sd_sim_matrix, 1, min),
+  mean = apply(sd_sim_matrix, 1, mean)
+)
+
+simulation <- ggplot(plot_data_sd, aes(x = distance)) +
+  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "grey70", alpha = 0.5) +
+  geom_line(aes(y = mean, color = "Random Baseline (CSR)"), linetype = "dashed", linewidth = 1) +
+  geom_line(aes(y = obs, color = "Real Accidents"), linewidth = 1.2) +
+  scale_color_manual(values = c("Real Accidents" = "black", "Random Baseline (CSR)" = "red")) +
+  labs(title = "Spatial Association Test",
+       subtitle = paste0("Observed vs. ", n_sim, " Simulations"),
+       x = "Distance to Nearest Speed Difference (meters)",
+       y = "Cumulative Proportion (CDF)",
+       color = "Legend") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+print(simulation)
+# ggsave("../Layouts/simulation_speed.png", simulation, width = 5, height = 5)
 ```
