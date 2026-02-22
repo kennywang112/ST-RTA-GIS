@@ -12,27 +12,23 @@ us_data_cleaned <- us_data_for_tree %>%
   ))%>%
   distinct()
 
-categorize_feature <- function(x) {
-  case_when(
-    x >= 0.8 ~ "Dominant",
-    x <= 0.2 ~ "Minor",
-    TRUE ~ "Mixed"
-  )
-}
 
 us_data_cleaned <- us_data_cleaned %>%
   mutate(across(
     .cols = where(is.numeric) & !any_of(exclude_cols),
     .fns = function(x) {
       if (max(x, na.rm = TRUE) <= 1 && min(x, na.rm = TRUE) >= 0) {
-        return(categorize_feature(x))
-      } else {
-        return(x)
-      }
-    }
-  )) %>%
+        q90 <- quantile(x, probs = 0.90, na.rm = TRUE)
+        q10 <- quantile(x, probs = 0.10, na.rm = TRUE)
+        categorized <- case_when(
+          x >= q90 ~ "Dominant",
+          x <= q10 ~ "Minor",
+          TRUE ~ "Mixed")
+        return(categorized)
+        } else {
+        return(x)}})) %>%
   mutate(across(where(is.character), as.factor))%>%
-  select(-c('lr_feature', 'hotspot', 'bn_feature', 'no_lane'))
+  select(-c("hotspot", "bn_feature", "lr_feature", "no_lane"))
 
 us_data_cleaned$Group_Label%>%table()
 

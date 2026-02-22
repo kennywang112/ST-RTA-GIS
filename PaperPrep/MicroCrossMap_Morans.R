@@ -1,8 +1,11 @@
+source('./utils/map_func.R')
+
+boundary <- st_read('../ST-RTA/ComputedDataV2/Taiwan/taiwan.shp')
 morans <- read_csv('../ST-RTA/ComputedDataV2/Grid/local_moran_results.csv') %>%
   st_as_sf(wkt = "geometry", crs = 3826)
 
-morans_filter <- morans%>%
-  filter(num_accidents > 0)
+# morans_filter <- morans%>%
+#   filter(num_accidents > 0)
 
 quadrant_labels <- c(
   "Not Significant" = "#eeeeee",
@@ -11,7 +14,7 @@ quadrant_labels <- c(
   "High-Low" = "#f46d43",
   "Low-High" = "#74add1"
 )
-tm_shape(morans_filter) +
+tm_shape(morans) +
   tm_fill(col = "quadrant",
           palette = quadrant_labels,
           title = "Local Morans I",

@@ -5,11 +5,11 @@ library(tidyverse)
 crs_init <- 4326
 crs <- 3826
 
-taiwan <- st_read("Data/村(里)界(TWD97經緯度)/VILLAGE_NLSC_1140825.shp")
-roads <- st_read(dsn="~/Desktop/ST-RTA-GIS/Data/road/gis_osm_roads_free_1.shp", layer="gis_osm_roads_free_1")
+taiwan <- st_read("./Data/村(里)界(TWD97經緯度)/VILLAGE_NLSC_1140825.shp")
+roads <- st_read(dsn="./Data/road/gis_osm_roads_free_1.shp", layer="gis_osm_roads_free_1")
 
 taiwan_crop <- taiwan%>%st_crop(xmin = 119, ymin = 20, xmax = 123, ymax = 26)
-combined_data_in_taiwan <- read_csv("/Users/wangqiqian/Desktop/ST-RTA/ComputedDataV2/Accident/combined_data_in_taiwan.csv")
+combined_data_in_taiwan <- read_csv("../ST-RTA/ComputedDataV2/Accident/combined_data_in_taiwan.csv")
 
 
 # 這個檔案的目的是找出離每個事故最近的youbike設施

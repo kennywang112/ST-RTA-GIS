@@ -6,6 +6,8 @@ library(raster)
 library(adehabitatHR)
 library(tidyverse)
 
+source('./utils/map_func.R')
+
 boundary <- st_read('../ST-RTA/ComputedDataV2/Taiwan/taiwan.shp')
 # county <- st_read(dsn="~/Desktop/ST-RTA/Data/OFiles_9e222fea-bafb-4436-9b17-10921abc6ef2/TOWN_MOI_1140318.shp", layer="TOWN_MOI_1140318")
 combined_data <- read_csv("~/Desktop/ST-RTA/ComputedDataV2/Accident/combined_data_in_taiwan.csv")
@@ -31,7 +33,7 @@ get_join <- function(sdf) {
 }
 new_county <- get_join(combined_data)
 
-tmap_mode("plot")
+tmap_mode("view")
 accident_count <- tm_shape(new_county) +
   tm_polygons(
     col = "count",
