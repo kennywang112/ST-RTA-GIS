@@ -12,8 +12,6 @@ final_boundary_data <- final_boundary_data %>%
     date_parsed = ymd(發生日期),
   )
 
-final_boundary_data
-
 final_boundary_data %>%
   count(hour) %>%
   ggplot(aes(x = hour, y = n)) +
@@ -24,12 +22,9 @@ final_boundary_data %>%
   labs(
     title = "Hourly Distribution of Traffic Accidents",
     x = "Time of Day (Hour)",
-    y = "Number of Accidents"
-  ) +
+    y = "Number of Accidents") +
   theme_minimal() +
-  theme(
-    plot.title = element_text(face = "bold", size = 16)
-  )
+  theme(plot.title = element_text(face = "bold", size = 16))
 
 youbike_sf <- read_csv('../ST-RTA/ComputedData/Youbike/full_youbike.csv')%>%
   st_as_sf(coords = c("PositionLon", "PositionLat"), crs = 4326)%>%
@@ -55,9 +50,9 @@ n_sample_size <- 10000
 n_sim <- 39
 dist_grid <- seq(0, 200, by = 5)
 
-yb_buffers <- youbike_sf %>%
-  st_buffer(200)
+yb_buffers <- youbike_sf %>% st_buffer(200)
 
+roads_3826  <- roads%>%st_transform(3826)
 roads_filtered <- roads_3826 %>%
   filter(!fclass %in% c("motorway", "motorway_link", "trunk", "trunk_link", "steps", "pedestrian"))
 
@@ -137,8 +132,6 @@ print(hourly_youbike_deviation)
 ggsave("./Layouts/hourly_youbike_deviation.png", hourly_youbike_deviation, width = 7, height = 5)
 
 
-
-
 ##########################
 
 
@@ -149,12 +142,18 @@ combined_sf <- combined_sf %>%
       # hour %in% c(9, 10, 11, 12, 13, 14, 15, 16, 18, 19) ~ "Normal Hours",
       TRUE ~ "Off-Peak Hours"
     ),
-    care_type = case_when(
+    car_type = case_when(
       `當事者區分-類別-大類別名稱-車種` == '人' ~ "Pedestrian",
       `當事者區分-類別-大類別名稱-車種` == '機車' ~ "Motorcycle",
        `當事者區分-類別-大類別名稱-車種` == '慢車' ~ "Bike",
        TRUE ~ "Car"
     ),
+    speed_group = case_when(
+      `速限-第1當事者` < 50 ~ "Low Speed (<50)",
+      `速限-第1當事者` == 50 ~ "Medium Speed (50)",
+      `速限-第1當事者` > 50 ~ "High Speed (>50)",
+      TRUE ~ "Other"
+    )
   )
 combined_sf$peak_status%>%table()
 
@@ -172,38 +171,51 @@ lst <- c("事故類別名稱", "處理單位名稱警局層", "天候名稱", "�
          "保護裝備名稱", "行動電話或電腦或其他相類功能裝置名稱", "當事者行動狀態大類別名稱",
          "當事者行動狀態子類別名稱", "車輛撞擊部位大類別名稱-最初", "車輛撞擊部位子類別名稱-最初",
          "車輛撞擊部位大類別名稱-其他", "車輛撞擊部位子類別名稱-其他", "肇因研判大類別名稱-個別", "肇事逃逸類別名稱-是否肇逃")
+lst_2 <- c('peak_status', 'car_type', 'hour', 'speed_group')
+for(i in lst_2) {
 
-for(i in c('peak_status', 'care_type')) {
   print(i)
   group_type = i
+
+  group_totals <- combined_sf %>%
+    st_drop_geometry() %>%
+    count(.data[[group_type]], name = "total_n")
+
   obs_cdf_peak <- combined_sf %>%
     st_drop_geometry() %>%
     group_by(.data[[group_type]]) %>%
     reframe(
       dist = dist_grid,
-      obs_cdf = ecdf(dist_to_nearest_youbike)(dist_grid)
-    ) %>%
+      obs_cdf = ecdf(dist_to_nearest_youbike)(dist_grid)) %>%
     left_join(df_sim_baseline %>% select(dist, mean), by = "dist") %>%
     mutate(deviation = obs_cdf - mean)
+
+  obs_count_deviation <- obs_cdf_peak %>%
+    left_join(group_totals, by = group_type) %>%
+    mutate(extra_accidents = deviation * total_n)
+
+  avg_n <- mean(group_totals$total_n)
 
   peak_youbike_deviation <- ggplot() +
     geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
     geom_ribbon(data = df_sim_centered,
-                aes(x = dist, ymin = lo_diff, ymax = hi_diff),
+                aes(x = dist,
+                    ymin = lo_diff * avg_n,
+                    ymax = hi_diff * avg_n),
                 fill = "grey70", alpha = 0.5) +
     geom_line(data = df_sim_centered,
-              aes(x = dist, y = mean_diff, linetype = "Random Baseline (CSR)"),
+              aes(x = dist, y = mean_diff * avg_n, linetype = "Random Baseline (CSR)"),
               color = "red", linewidth = 1) +
-    geom_line(data = obs_cdf_peak,
-              aes(x = dist, y = deviation, color = as.factor(.data[[group_type]])),
+    geom_line(data = obs_count_deviation,
+              aes(x = dist, y = extra_accidents, color = as.factor(.data[[group_type]])),
               linewidth = 1.2, alpha = 0.9) +
     scale_x_continuous(limits = c(0, 200)) +
-    scale_color_viridis_d(option = "turbo", name = "Care Type") +
-      scale_linetype_manual(name = "Baseline", values = c("Random Baseline (CSR)" = "dashed")) +
-    labs(title = "Spatial Clustering Deviation: Peak vs. Off-Peak Hours",
-         subtitle = paste0("Difference from Random Baseline (", n_sim, " Simulations)"),
+    scale_color_viridis_d(option = "turbo", name = group_type) +
+    scale_linetype_manual(name = "Baseline", values = c("Random Baseline (CSR)" = "dashed")) +
+    labs(title = paste("Spatial Accident Surplus:", group_type),
+         subtitle = paste0("Absolute Extra Accidents (Observed - Expected Counts) | n_sim = ", n_sim),
          x = "Distance to Nearest YouBike (m)",
-         y = "Deviation from CSR (Observed - Expected CDF)") +
+         y = "Extra Accidents (Number of Cases)") +
     theme_minimal(base_family = "PingFang TC") +
     theme(legend.position = "bottom",
           legend.box = "vertical",
@@ -212,4 +224,3 @@ for(i in c('peak_status', 'care_type')) {
 
 ggsave(paste0("./Layouts/testing_", i, ".png"), peak_youbike_deviation, width = 7, height = 6)
 }
-
