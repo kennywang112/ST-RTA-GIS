@@ -9,7 +9,8 @@ message(paste("Cell:", availableCores() - 1))
 roads <- st_read(dsn="./Data/road/gis_osm_roads_free_1.shp", layer="gis_osm_roads_free_1")
 youbike_sf <- read_csv('../ST-RTA/ComputedData/Youbike/full_youbike.csv')%>%
   st_as_sf(coords = c("PositionLon", "PositionLat"), crs = 4326)%>%
-  st_transform(3826)
+  st_transform(3826)%>%
+  slice_sample(n = 1000)
 final_boundary_data <- read_csv("../ST-RTA/ComputedDataV7/Data/Final_boundary_data.csv")
 
 # 這是python經過篩選後計算出來的grid gi，雖然用taiwan 篩選的boundary直接處理更好但現在這樣比較方便
@@ -30,6 +31,11 @@ differnce_filtered <- st_read("./CalculatedData/pairs_annot_all_cities.shp")%>%
   st_as_sf(geometry = "geometry", crs = 3826) %>% st_filter(final_boundary, .predicate = st_intersects) %>%
   slice_sample(n = nrow(youbike_sf))
 
+parking_lot <- read_csv('../ST-RTA/ComputedData/Parkinglot/full_parkinglot.csv') %>%
+  st_as_sf(coords = c("PositionLon", "PositionLat"), crs = 4326) %>%
+  st_transform(3826)
+parking_lot_filtered <- parking_lot %>% st_filter(final_boundary, .predicate = st_intersects) %>%
+  slice_sample(n = nrow(youbike_sf))
 ########################## Bus Stop, MRT, Difference Filter ended
 final_boundary_data <- final_boundary_data %>%
   mutate(
@@ -78,8 +84,6 @@ combined_sf <- combined_sf %>%
     )
   )
 
-combined_sf$hour%>%table()
-
 set.seed(123)
 n_sim <- 39
 dist_grid <- seq(0, 500, by = 5)
@@ -96,15 +100,22 @@ run_simulation_network <- function(i, target_dt, network_sf, size = 10000) {
     st_cast("POINT")
   # 計算路網上的隨機點，到最近 YouBike 站的距離
   idx <- st_nearest_feature(rand_pts, target_dt)
-  return(ecdf(as.numeric(st_distance(rand_pts, target_dt[idx, ], by_element = TRUE)))(dist_grid))
+  dists <- as.numeric(st_distance(rand_pts, target_dt[idx, ], by_element = TRUE))
+
+  valid_dists <- dists[dists <= 500]
+
+  return(ecdf(valid_dists)(dist_grid))
 }
 
+
 poi_to_analyze <- list(
-  "YouBike" = youbike_sf,
-  "Bus_Stop" = bus_filtered,
-  "MRT" = mrt_filtered,
-  "Difference_Filter" = differnce_filtered
+  # "YouBike" = youbike_sf,
+  # "Bus_Stop" = bus_filtered,
+  # "MRT" = mrt_filtered,
+  "Parking_Lot" = parking_lot_filtered
+  # "Difference_Filter" = differnce_filtered
 )
+
 
 all_simulation <- list()
 all_obs_distances <- list()
@@ -115,20 +126,21 @@ for (poi_name in names(poi_to_analyze)) {
 
   chosed_poi <- poi_to_analyze[[poi_name]]
 
-  poi_buffer <- st_buffer(chosed_poi, dist = 500) %>% st_union() %>% st_as_sf()
-
-  local_roads <- st_intersection(roads_filtered, poi_buffer)
-  local_combined_sf <- st_filter(combined_sf, poi_buffer)
+  idx_all <- st_nearest_feature(combined_sf, chosed_poi)
+  message('keep 1')
+  dist_all <- as.numeric(st_distance(combined_sf, chosed_poi[idx_all, ], by_element = TRUE))
+  message('keep 2')
+  local_combined_sf <- combined_sf[dist_all <= 500, ]
+  message('keep 3')
   all_local_sf[[poi_name]] <- local_combined_sf
+  message('keep 4')
+  all_obs_distances[[poi_name]] <- dist_all[dist_all <= 500]
+  message('keep 5')
+  local_roads <- roads_filtered[lengths(st_is_within_distance(roads_filtered, chosed_poi, dist = 500)) > 0, ]
 
-  idx_poi <- st_nearest_feature(local_combined_sf, chosed_poi)
-  all_obs_distances[[poi_name]] <- as.numeric(
-    st_distance(local_combined_sf, chosed_poi[idx_poi, ], by_element = TRUE)
-  )
+  message('keep 6')
 
   plan(multisession, workers = 3)
-
-  roads_study_area <- st_filter(roads_filtered, final_boundary)
 
   results_list <- future_lapply(1:n_sim, run_simulation_network,
                                 size = 10000,
@@ -142,7 +154,7 @@ for (poi_name in names(poi_to_analyze)) {
 
 plan(sequential)
 ##########################
-target_poi <- "Difference_Filter"
+target_poi <- "Parking_Lot" # "YouBike" , "Bus_Stop", "MRT" , "Difference_Filter", "Parking_Lot"
 
 current_sim_matrix <- all_simulation[[target_poi]]
 plot_sf <- all_local_sf[[target_poi]]
@@ -152,55 +164,14 @@ overall_accident_cdf <- ecdf(plot_sf$current_dist)(dist_grid)
 
 df_sim_baseline <- data.frame(
   dist = dist_grid,
-  mean = overall_accident_cdf,
+  mean = apply(current_sim_matrix, 1, mean),
   hi = apply(current_sim_matrix, 1, max),
   lo = apply(current_sim_matrix, 1, min)
 )
 df_sim_centered <- df_sim_baseline %>%
   mutate(lo_diff = lo - mean, hi_diff = hi - mean, mean_diff = 0)
 
-obs_cdf_hourly <- plot_sf %>%
-  st_drop_geometry() %>%
-  group_by(hour_factor) %>%
-  reframe(
-    dist = dist_grid,
-    obs_cdf = ecdf(current_dist)(dist_grid)
-  ) %>%
-  left_join(df_sim_baseline %>% select(dist, mean), by = "dist") %>%
-  mutate(deviation = obs_cdf - mean)
-
-hourly_youbike_deviation <- ggplot() +
-  geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
-  geom_ribbon(data = df_sim_centered,
-              aes(x = dist, ymin = lo_diff, ymax = hi_diff),
-              fill = "grey70", alpha = 0.5) +
-  geom_line(data = df_sim_centered,
-            aes(x = dist, y = mean_diff, linetype = "Random Baseline (CSR)"),
-            color = "red", linewidth = 1) +
-  geom_line(data = obs_cdf_hourly,
-            aes(x = dist, y = deviation,
-                # y = obs_cdf,
-                color = hour_factor),
-            linewidth = 0.6, alpha = 0.8) +
-  scale_x_continuous(limits = c(0, 200)) +
-  scale_color_viridis_d(option = "turbo", name = "Hour of Day") +
-  scale_linetype_manual(name = "Baseline", values = c("Random Baseline (CSR)" = "dashed")) +
-  labs(title = "Spatial Clustering Deviation across 24 Hours",
-       subtitle = paste0("Difference from Random Baseline (", n_sim, " Simulations)"),
-       x = "Distance to Nearest YouBike (m)",
-       y = "Deviation from CSR (Observed CDF - Expected CDF)") +
-  theme_minimal() +
-  theme(legend.position = "right",
-        legend.key.size = unit(0.4, "cm"),
-        legend.text = element_text(size = 8))
-
-print(hourly_youbike_deviation)
-
-# ggsave("./Layouts/hourly_youbike_deviation.png", hourly_youbike_deviation, width = 7, height = 5)
-
-
 ##########################
-
 lst <- c("事故類別名稱", "天候名稱", "光線名稱",
          "道路類別-第1當事者-名稱", "速限-第1當事者", "道路型態大類別名稱",
          "道路型態子類別名稱", "事故位置大類別名稱", "事故位置子類別名稱",
@@ -214,7 +185,7 @@ lst <- c("事故類別名稱", "天候名稱", "光線名稱",
          "當事者區分-類別-子類別名稱-車種", "當事者屬-性-別名稱", "當事者事故發生時年齡",
          "保護裝備名稱", "行動電話或電腦或其他相類功能裝置名稱", "當事者行動狀態大類別名稱",
          "當事者行動狀態子類別名稱", "車輛撞擊部位大類別名稱-最初", "車輛撞擊部位子類別名稱-最初",
-         "車輛撞擊部位大類別名稱-其他", "車輛撞擊部位子類別名稱-其他", "肇因研判大類別名稱-個別", "肇事逃逸類別名稱-是否肇逃")
+         "肇因研判大類別名稱-個別", "肇事逃逸類別名稱-是否肇逃")
 lst_2 <- c('peak_status', 'car_type', 'hour', 'speed_group')
 for(i in lst_2) {
 
@@ -266,6 +237,6 @@ for(i in lst_2) {
           plot.title = element_text(face = "bold", size = 14))
   print(peak_youbike_deviation)
 
-ggsave(paste0("./Layouts/testing_", i, "_Diff.png"), peak_youbike_deviation, width = 7, height = 6)
+ggsave(paste0("./Layouts/testing_", i, "_", target_poi, ".png"), peak_youbike_deviation, width = 7, height = 6)
 }
 
