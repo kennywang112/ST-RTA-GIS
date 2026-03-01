@@ -48,7 +48,7 @@ final_boundary_data %>%
   geom_line(size = 1.2, color = "steelblue") +
   geom_point(size = 2.5, color = "darkblue") +
   geom_hline(yintercept = 40000, linetype = "dashed", color = "red", size = 1) +
-  geom_hline(yintercept = 35000, linetype = "dashed", color = "red", size = 1) +
+  # geom_hline(yintercept = 35000, linetype = "dashed", color = "red", size = 1) +
   scale_x_continuous(breaks = 0:23) +
   labs(
     title = "Hourly Distribution of Traffic Accidents",
@@ -66,7 +66,8 @@ combined_sf <- final_boundary_data %>%
 combined_sf <- combined_sf %>%
   mutate(
     peak_status = case_when(
-      hour %in% c(7, 8,  17) ~ "Peak Hours",
+      # hour %in% c(7, 8, 16, 17, 18) ~ "Peak Hours",
+      hour %in% c(7, 8, 17) ~ "Peak Hours",
       # hour %in% c(9, 10, 11, 12, 13, 14, 15, 16, 18, 19) ~ "Normal Hours",
       TRUE ~ "Off-Peak Hours"
     ),
@@ -109,11 +110,11 @@ run_simulation_network <- function(i, target_dt, network_sf, size = 10000) {
 
 
 poi_to_analyze <- list(
-  # "YouBike" = youbike_sf,
-  # "Bus_Stop" = bus_filtered,
-  # "MRT" = mrt_filtered,
-  "Parking_Lot" = parking_lot_filtered
-  # "Difference_Filter" = differnce_filtered
+  "YouBike" = youbike_sf,
+  "Bus_Stop" = bus_filtered,
+  "MRT" = mrt_filtered,
+  "Parking_Lot" = parking_lot_filtered,
+  "Difference_Filter" = differnce_filtered
 )
 
 
@@ -154,7 +155,7 @@ for (poi_name in names(poi_to_analyze)) {
 
 plan(sequential)
 ##########################
-target_poi <- "Parking_Lot" # "YouBike" , "Bus_Stop", "MRT" , "Difference_Filter", "Parking_Lot"
+target_poi <- "Bus_Stop" # "YouBike" , "Bus_Stop", "MRT" , "Difference_Filter", "Parking_Lot"
 
 current_sim_matrix <- all_simulation[[target_poi]]
 plot_sf <- all_local_sf[[target_poi]]
@@ -185,18 +186,20 @@ lst <- c("事故類別名稱", "天候名稱", "光線名稱",
          "當事者區分-類別-子類別名稱-車種", "當事者屬-性-別名稱", "當事者事故發生時年齡",
          "保護裝備名稱", "行動電話或電腦或其他相類功能裝置名稱", "當事者行動狀態大類別名稱",
          "當事者行動狀態子類別名稱", "車輛撞擊部位大類別名稱-最初", "車輛撞擊部位子類別名稱-最初",
-         "肇因研判大類別名稱-個別", "肇事逃逸類別名稱-是否肇逃")
-lst_2 <- c('peak_status', 'car_type', 'hour', 'speed_group')
-for(i in lst_2) {
+         "肇因研判大類別名稱-個別", "肇事逃逸類別名稱-是否肇逃", 'peak_status')
+lst <- c("peak_status")
+for(i in lst) {
 
   print(i)
   group_type = i
 
   group_totals <- plot_sf %>%
+    # filter(!.data[[i]] %in% c("平交道", "其他"))%>%
     st_drop_geometry() %>%
     count(.data[[group_type]], name = "total_n")
 
   obs_cdf_peak <- plot_sf %>%
+    # filter(!.data[[i]] %in% c("平交道", "其他"))%>%
     st_drop_geometry() %>%
     group_by(.data[[group_type]]) %>%
     reframe(
@@ -205,38 +208,32 @@ for(i in lst_2) {
     left_join(df_sim_baseline %>% select(dist, mean), by = "dist") %>%
     mutate(deviation = obs_cdf - mean)
 
-  obs_count_deviation <- obs_cdf_peak %>%
-    left_join(group_totals, by = group_type) %>%
-    mutate(extra_accidents = deviation * total_n)
-
-  avg_n <- mean(group_totals$total_n)
-
   peak_youbike_deviation <- ggplot() +
     geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
     geom_ribbon(data = df_sim_centered,
                 aes(x = dist,
-                    ymin = lo_diff * avg_n,
-                    ymax = hi_diff * avg_n),
+                    ymin = lo_diff,
+                    ymax = hi_diff),
                 fill = "grey70", alpha = 0.5) +
     geom_line(data = df_sim_centered,
-              aes(x = dist, y = mean_diff * avg_n, linetype = "Random Baseline (CSR)"),
+              aes(x = dist, y = mean_diff, linetype = "Random Baseline (CSR)"),
               color = "red", linewidth = 1) +
-    geom_line(data = obs_count_deviation,
-              aes(x = dist, y = extra_accidents, color = as.factor(.data[[group_type]])),
+    geom_line(data = obs_cdf_peak,
+              aes(x = dist, y = deviation, color = as.factor(.data[[group_type]])),
               linewidth = 1.2, alpha = 0.9) +
     scale_x_continuous(limits = c(0, 500)) +
     scale_color_viridis_d(option = "turbo", name = group_type) +
     scale_linetype_manual(name = "Baseline", values = c("Random Baseline (CSR)" = "dashed")) +
-    labs(title = paste("Spatial Accident Surplus:", group_type),
-         subtitle = paste0("Absolute Extra Accidents (Observed - Expected Counts) | n_sim = ", n_sim),
+    labs(title = paste("Spatial Accident:", group_type),
+         subtitle = paste0("Relative Probability Deviation (Observed - Simulated Baseline) | n_sim = ", n_sim),
          x = "Distance to Nearest POI (m)",
-         y = "Deviation (Observed CDF - Overall CDF)") +
+         y = "Deviation") +
     theme_minimal(base_family = "PingFang TC") +
     theme(legend.position = "bottom",
           legend.box = "vertical",
           plot.title = element_text(face = "bold", size = 14))
   print(peak_youbike_deviation)
 
-ggsave(paste0("./Layouts/testing_", i, "_", target_poi, ".png"), peak_youbike_deviation, width = 7, height = 6)
+ggsave(paste0("./Layouts/deviation_testing_", i, "_", target_poi, ".png"), peak_youbike_deviation, width = 7, height = 6)
 }
 
